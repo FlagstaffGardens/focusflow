@@ -3,8 +3,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    expose:
-      - "3000"
+    ports:
+      - "${WEB_PORT:-3000}:3000"
     environment:
       - PORT=3000
       - DATA_DIR=/data

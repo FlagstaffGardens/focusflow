@@ -13,7 +13,7 @@ docker compose build
 docker compose up -d
 ```
 
-By default the service only listens on port `3000` inside the container (perfect for Dokploy/Traefik routing). If you want to reach it from the host while testing locally, add an override with `ports: ['3000:3000']`.
+The compose file maps host `${WEB_PORT:-3000}` to container `3000`. Adjust `WEB_PORT` in your `.env` if the default port is busy.
 
 The compose file mounts a single volume:
 
@@ -28,7 +28,7 @@ Stop with `docker compose down` (the volume keeps prior jobs).
    - `OPENAI_API_KEY`
    - Optional `ASSEMBLYAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL`, `DATA_DIR=/data`
 3. **Volumes** – attach a persistent volume to `/data`. (Optional prompt overrides can still mount to `/app/prompts`, but it is not required.)
-4. **Ports** – configure Dokploy/Traefik to route to container port `3000` (no host publish necessary).
+4. **Ports** – either expose `${WEB_PORT}` directly or configure Dokploy/Traefik to route to container port `3000`.
 5. **Deploy** – Dokploy builds the image (running `pnpm build`) and starts `node server.js` from the standalone output.
 6. **Smoke test** – submit a Plaud share link and confirm the date, audio download, and summary all complete.
 

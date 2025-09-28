@@ -40,7 +40,7 @@ This produces the Next.js standalone server under `.next/standalone`, which the 
 The repository ships with a multi-stage `Dockerfile` and `docker-compose.yml` that:
 
 - Builds the app with pnpm
-- Runs the standalone Next.js server listening on port `3000`
+- Runs the standalone Next.js server listening on port `3000` (host side controlled via `WEB_PORT` env)
 - Mounts `/data` for persistent jobs, transcripts, and downloaded audio
 
 ### Quick test
@@ -50,21 +50,21 @@ docker compose build
 docker compose up
 ```
 
-By default the compose stack exposes port `3000` only inside the container (ideal for Traefik/Dokploy routing). If you want to reach it directly on your machine, add a small override with `ports: ['3000:3000']` when running locally.
+The compose stack publishes host port `${WEB_PORT:-3000}` to container `3000` by default. Set `WEB_PORT` in `.env` if another service already occupies that port.
 
 ### Dokploy checklist
 
 1. Create an app using the repository or Dockerfile.
 2. Upload your `.env` (or enter the same variables manually). When using the provided sample, make sure `DATA_DIR=/data`.
 3. Attach a persistent volume to `/data` for jobs/files.
-4. Route traffic to container port `3000` via Dokploy/Traefik (no host port publish required).
+4. Pick a `WEB_PORT` that’s free in your Dokploy environment (defaults to 3000) or rely on Traefik ingress rules.
 5. Deploy and run a smoke job to confirm end-to-end processing.
 
 ## Deployment TL;DR
 
 1. `cp .env.example .env` and fill in keys (`OPENAI_API_KEY` mandatory, set `DATA_DIR=/data` for Docker).
 2. `docker compose build && docker compose up -d` to verify locally.
-3. In Dokploy, point to this repo/Dockerfile, upload the same `.env`, mount a volume at `/data`, and configure ingress to target container port 3000.
+3. In Dokploy, point to this repo/Dockerfile, upload the same `.env`, mount a volume at `/data`, and either expose `${WEB_PORT}` or route ingress to container port 3000.
 4. Deploy and run a Plaud share link as a smoke test.
 
 ## Project Layout
