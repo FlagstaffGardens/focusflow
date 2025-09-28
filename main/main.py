@@ -203,11 +203,7 @@ def transcribe_with_assemblyai(job_id: str, file_path: str, log: Callable[[str],
         json={
             "audio_url": upload_url,
             "speaker_labels": True,  # Enable speaker diarization
-            "speakers_expected": 2,  # Expect 2 speakers (can adjust or remove)
-            "auto_highlights": True,  # Get key points
-            "sentiment_analysis": True,  # Analyze sentiment
-            "entity_detection": True,  # Detect entities
-            "format_text": True,  # Format with punctuation
+            "format_text": True,  # Automatic punctuation and casing
         },
         timeout=30,
     )
@@ -353,7 +349,123 @@ def extract_title_from_summary(summary: str) -> str:
     return "Meeting Summary"
 
 
-def summarize_with_gpt(job_id: str, text: str, log: Callable[[str], None], meeting_date: str = "") -> Generator[None, None, Optional[str]]:
+def _extract_output_text(obj: Any) -> str:
+    """Walk the responses payload and collect output_text strings."""
+    collected = []
+
+    def _walk(item: Any) -> None:
+        if isinstance(item, dict):
+            delta_val = item.get("delta")
+            if isinstance(delta_val, str):
+                collected.append(delta_val)
+            if item.get("type") in {"output_text", "text"} and item.get("text"):
+                collected.append(str(item.get("text")))
+            if item.get("output_text"):
+                collected.append(str(item.get("output_text")))
+            for value in item.values():
+                _walk(value)
+        elif isinstance(item, list):
+            for value in item:
+                _walk(value)
+
+    _walk(obj)
+    return "".join(collected).strip()
+
+
+def _call_gpt_api(
+    url: str,
+    headers: Dict[str, str],
+    payload: Dict[str, Any],
+    *,
+    stream: bool,
+) -> str:
+    if stream:
+        r = requests.post(url, headers=headers, json=payload, timeout=300, stream=True)
+        if r.status_code >= 400:
+            raise RuntimeError(f"GPT endpoint HTTP {r.status_code}: {r.text[:200]}")
+        content_parts: list[str] = []
+        try:
+            r.encoding = "utf-8"
+        except Exception:
+            pass
+        for raw_line in r.iter_lines(chunk_size=8192):
+            if not raw_line:
+                continue
+            try:
+                line = raw_line.decode("utf-8").strip()
+            except Exception:
+                line = raw_line.decode("utf-8", errors="replace").strip()
+            if not line.startswith("data:"):
+                continue
+            payload_line = line[5:].strip()
+            if payload_line == "[DONE]":
+                break
+            try:
+                obj = json.loads(payload_line)
+            except Exception:
+                continue
+            if isinstance(obj, dict):
+                event_type = obj.get("type")
+                if event_type in {"output_text.delta", "response.output_text.delta"}:
+                    delta = obj.get("delta", "")
+                    if isinstance(delta, str):
+                        content_parts.append(delta)
+                    continue
+                if event_type in {"output_text", "response.output_text"}:
+                    full = obj.get("output_text") or obj.get("text") or ""
+                    if isinstance(full, str) and full:
+                        content_parts = [full]
+                    continue
+                if event_type in {"message.delta", "response.message.delta"}:
+                    delta = obj.get("delta", {})
+                    if isinstance(delta, dict):
+                        cont = delta.get("content")
+                        if isinstance(cont, list):
+                            for item in cont:
+                                if (
+                                    isinstance(item, dict)
+                                    and item.get("type") in {"output_text", "text"}
+                                    and item.get("text")
+                                ):
+                                    content_parts.append(str(item["text"]))
+                    continue
+                if "response" in obj and isinstance(obj["response"], dict):
+                    text = _extract_output_text(obj["response"])
+                    if text:
+                        content_parts = [text]
+                    continue
+            text = _extract_output_text(obj)
+            if text:
+                content_parts = [text]
+        return "".join(content_parts).strip()
+
+    # Non-stream fall back
+    r = requests.post(url, headers=headers, json=payload, timeout=300)
+    if r.status_code >= 400:
+        raise RuntimeError(f"GPT endpoint HTTP {r.status_code}: {r.text[:200]}")
+    try:
+        data = r.json()
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(f"GPT non-stream response parse error: {exc}") from exc
+    # Responses API may wrap under response/output etc.
+    if isinstance(data, dict):
+        if data.get("output_text"):
+            return str(data["output_text"]).strip()
+        resp = data.get("response")
+        if resp:
+            text = _extract_output_text(resp)
+            if text:
+                return text
+    text = _extract_output_text(data)
+    return text.strip()
+
+
+def summarize_with_gpt(
+    job_id: str,
+    text: str,
+    log: Callable[[str], None],
+    meeting_date: str = "",
+) -> Generator[None, None, Optional[str]]:
     """Summarize using the OpenAI Responses API, with graceful fallback parsing.
 
     Uses POST {OPENAI_BASE_URL}/v1/responses with {model, input}.
@@ -368,100 +480,51 @@ def summarize_with_gpt(job_id: str, text: str, log: Callable[[str], None], meeti
     model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
     url = f"{base}/v1/responses"
     prompt_text = _load_prompt_text()
+    rendered_prompt = _render_summary_prompt(
+        prompt_text,
+        transcript=text,
+        meeting_date=meeting_date or "TBD",
+    )
     payload = {
         "model": model,
         "input": [
+            {
+                "role": "system",
+                "content": [
+                    {
+                        "type": "input_text",
+                        "text": "You are an expert meeting analyst and technical program manager. Produce a clear, executive-ready meeting summary from the transcript while following the requested format.",
+                    }
+                ],
+            },
             {
                 "role": "user",
                 "content": [
                     {
                         "type": "input_text",
-                        "text": prompt_text + (f"\n\nMeeting Date: {meeting_date}" if meeting_date else "") + "\n\nTranscript:\n" + text,
+                        "text": rendered_prompt,
                     }
                 ],
-            }
+            },
         ],
         "temperature": 0.2,
         "stream": True,
     }
     log("Calling GPT endpoint (Responses API, stream) ..."); yield None
     try:
-        r = requests.post(
-            url,
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
-            json=payload,
-            timeout=300,
-            stream=True,
-        )
-        if r.status_code >= 400:
-            log(f"GPT endpoint HTTP {r.status_code}; skipping"); yield None
-            return None
-        # Stream parse SSE lines (force UTF-8 to avoid mojibake), collecting deltas
-        content = ""
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
         try:
-            r.encoding = "utf-8"
-        except Exception:
-            pass
-        for raw_line in r.iter_lines(chunk_size=8192):
-            if not raw_line:
-                continue
-            try:
-                line = raw_line.decode("utf-8").strip()
-            except Exception:
-                line = raw_line.decode("utf-8", errors="replace").strip()
-            if line.startswith("data:"):
-                payload = line[5:].strip()
-                if payload == "[DONE]":
-                    break
-                try:
-                    obj = json.loads(payload)
-                except Exception:
-                    continue
-                # 1) Direct output_text on root (rare) or nested under 'response'
-                if isinstance(obj, dict):
-                    if obj.get("output_text"):
-                        content = str(obj["output_text"]).strip()
-                        continue
-                    resp = obj.get("response")
-                    if isinstance(resp, dict):
-                        if resp.get("output_text"):
-                            content = str(resp["output_text"]).strip()
-                            continue
-                        out = resp.get("output")
-                        if isinstance(out, list):
-                            for item in out:
-                                if isinstance(item, dict) and item.get("type") == "output_text":
-                                    content += str(item.get("text", ""))
-                            continue
-                # Delta-style events
-                t = obj.get("type") if isinstance(obj, dict) else None
-                if t == "output_text.delta":
-                    content += str(obj.get("delta", ""))
-                    continue
-                if t == "response.output_text.delta":
-                    content += str(obj.get("delta", ""))
-                    continue
-                if t in ("message.delta","response.message.delta"):
-                    delta = obj.get("delta", {}) if isinstance(obj, dict) else {}
-                    if isinstance(delta, dict):
-                        cont = delta.get("content")
-                        if isinstance(cont, list):
-                            for c in cont:
-                                if isinstance(c, dict):
-                                    if c.get("type") in ("output_text","text"):
-                                        content += str(c.get("text", ""))
-                            continue
-                # Other possible shapes
-                if isinstance(obj, dict):
-                    out = obj.get("output")
-                    if isinstance(out, list):
-                        for item in out:
-                            if isinstance(item, dict) and item.get("type") == "output_text":
-                                content += str(item.get("text", ""))
-        content = content.strip()
+            content = _call_gpt_api(url, headers, payload, stream=True)
+        except (requests.exceptions.ChunkedEncodingError, requests.exceptions.ConnectionError, requests.exceptions.ReadTimeout) as e:
+            log(f"GPT stream error: {e}; returning partial content if any"); yield None
+            content = ""
+        except RuntimeError as err:
+            err_msg = str(err)
+            log(f"Responses API error: {err_msg}"); yield None
+            return None
         if not content:
             log("GPT returned empty content"); yield None
             return None
@@ -669,6 +732,10 @@ class AppState(rx.State):
         # Fallback to URL if no title
         return str(j.get("url", "Job Detail")) if j else "Job Detail"
 
+    @rx.var
+    def display_summary(self) -> str:
+        return _normalize_summary(self.current_summary)
+
     def toggle_transcript(self):
         """Toggle transcript visibility."""
         self.transcript_open = not self.transcript_open
@@ -794,8 +861,16 @@ class AppState(rx.State):
             j["status"] = "summarizing"
             self._save()
             summary = (
-                (yield from summarize_with_gpt(job_id, j["transcript"], lambda m: self._append_log(job_id, m), j.get("meeting_date", "")))
-                if j["transcript"] else None
+                (
+                    yield from summarize_with_gpt(
+                        job_id,
+                        j["transcript"],
+                        lambda m: self._append_log(job_id, m),
+                        meeting_date=j.get("meeting_date", ""),
+                    )
+                )
+                if j["transcript"]
+                else None
             )
             j["summary"] = summary or ""
             # Generate title from summary using AI
@@ -888,7 +963,12 @@ class AppState(rx.State):
         self._save()
         yield self._append_log(job_id, "Regenerating summary ...")
         try:
-            summary = yield from summarize_with_gpt(job_id, transcript, lambda m: self._append_log(job_id, m), j.get("meeting_date", ""))
+            summary = yield from summarize_with_gpt(
+                job_id,
+                transcript,
+                lambda m: self._append_log(job_id, m),
+                meeting_date=j.get("meeting_date", ""),
+            )
             j["summary"] = summary or ""
             # Generate title from summary using AI
             if summary:
@@ -936,7 +1016,12 @@ class AppState(rx.State):
         self._save()
         yield self._append_log(jid, "Regenerating summary ...")
         try:
-            summary = yield from summarize_with_gpt(jid, transcript, lambda m: self._append_log(jid, m), j.get("meeting_date", ""))
+            summary = yield from summarize_with_gpt(
+                jid,
+                transcript,
+                lambda m: self._append_log(jid, m),
+                meeting_date=j.get("meeting_date", ""),
+            )
             j["summary"] = summary or ""
             # Generate title from summary using AI
             if summary:
@@ -1184,6 +1269,74 @@ def _relative_time(ts: int) -> str:
     return f"{delta//86400}d ago"
 
 
+def _render_summary_prompt(
+    template: str,
+    *,
+    transcript: str,
+    meeting_date: str,
+) -> str:
+    """Fill the prompt template placeholders with runtime data."""
+    replacements = {
+        "{{transcript}}": transcript,
+        "{{meeting_date}}": meeting_date or "TBD",
+    }
+    rendered = template
+    for placeholder, value in replacements.items():
+        rendered = rendered.replace(placeholder, value)
+    return rendered
+
+
+ACTION_ITEMS_PATTERN = re.compile(
+    r"(#+\s*Action Items[^\n]*\n)((?:\|.*\n)+)",
+    re.IGNORECASE,
+)
+
+
+def _normalize_summary(summary: str) -> str:
+    """Convert dense markdown tables into readable text bullets."""
+    if not summary:
+        return ""
+
+    match = ACTION_ITEMS_PATTERN.search(summary)
+    if not match:
+        return summary
+
+    heading_line = match.group(1).strip()
+    table_lines = [line.strip() for line in match.group(2).splitlines() if line.strip()]
+    if len(table_lines) < 3:
+        return summary
+
+    headers = [col.strip() for col in table_lines[0].strip("|").split("|")]
+    rows = []
+    for row_line in table_lines[2:]:  # skip separator row
+        cells = [cell.strip() for cell in row_line.strip("|").split("|")]
+        if len(cells) != len(headers):
+            continue
+        data = dict(zip(headers, cells))
+        action = data.get("Action", "")
+        owner = data.get("Owner", "")
+        due = data.get("Due Date", "")
+        success = data.get("Success Criteria", "")
+
+        bullet_lines = [f"- **{action}**" if action else "- **Action**"]
+        if owner:
+            bullet_lines.append(f"  - Owner: {owner}")
+        if due:
+            bullet_lines.append(f"  - Due: {due}")
+        if success:
+            bullet_lines.append(f"  - Success Criteria: {success}")
+        rows.append("\n".join(bullet_lines))
+
+    if not rows:
+        return summary
+
+    replacement = f"{heading_line}\n\n" + "\n\n".join(rows) + "\n\n"
+    transformed = summary[: match.start()] + replacement + summary[match.end():]
+    # collapse extra blank lines for neat formatting
+    transformed = re.sub(r"\n{3,}", "\n\n", transformed)
+    return transformed.strip()
+
+
 def _job_card(j: dict) -> rx.Component:
     return rx.box(
         rx.flex(
@@ -1241,8 +1394,6 @@ def _job_card(j: dict) -> rx.Component:
         cursor="pointer",
         on_click=lambda: rx.redirect(j["path"]),
     )
-
-
 def index() -> rx.Component:
     return rx.center(
         rx.vstack(
@@ -1321,31 +1472,65 @@ def job_detail(job_id: str = "") -> rx.Component:
                 display="none",
             ),
             nav,
-            # Header section
+            # Header section (mobile-first)
             rx.vstack(
-                rx.hstack(
-                    rx.heading(AppState.current_title, size="7"),
-                    rx.badge(AppState.current_status, variant="soft", size="2"),
-                    rx.spacer(),
-                    rx.button("Re-summarize", size="2", on_click=AppState.regenerate_summary, variant="soft", cursor="pointer"),
-                    rx.button("Retry", size="2", on_click=AppState.retry_current, variant="soft", cursor="pointer"),
-                    rx.button("Delete", size="2", on_click=AppState.delete_current, color_scheme="red", variant="soft", cursor="pointer"),
-                    align="center",
-                    spacing="3",
+                rx.heading(
+                    AppState.current_title,
+                    size="6",
+                    text_align="left",
                     width="100%",
+                    style={"lineHeight": "1.2", "wordBreak": "break-word"},
                 ),
-                rx.cond(
-                    AppState.current_meeting_date,
-                    rx.hstack(
-                        rx.icon("calendar", size=20),
-                        rx.text(f"Meeting Date: {AppState.current_meeting_date}", size="3", weight="medium", color="blue.600"),
-                        spacing="1",
+                rx.flex(
+                    rx.badge(AppState.current_status, variant="soft", size="2"),
+                    rx.cond(
+                        AppState.current_meeting_date,
+                        rx.hstack(
+                            rx.icon("calendar", size=18),
+                            rx.text(
+                                f"Meeting Date: {AppState.current_meeting_date}",
+                                size="2",
+                                weight="medium",
+                                color="blue.600",
+                            ),
+                            spacing="1",
+                            align="center",
+                        ),
+                        rx.fragment(),
                     ),
-                    rx.fragment(),
+                    align="start",
+                    wrap="wrap",
+                    gap="2",
+                    width="100%",
                 ),
                 spacing="2",
                 width="100%",
                 max_width="960px",
+            ),
+            rx.flex(
+                rx.button(
+                    "Re-summarize",
+                    size="2",
+                    on_click=AppState.regenerate_summary,
+                    variant="soft",
+                    cursor="pointer",
+                    style={"flex": "1 1 160px", "minWidth": "140px"},
+                ),
+                rx.button(
+                    "Delete",
+                    size="2",
+                    on_click=AppState.delete_current,
+                    color_scheme="red",
+                    variant="soft",
+                    cursor="pointer",
+                    style={"flex": "1 1 160px", "minWidth": "140px"},
+                ),
+                wrap="wrap",
+                gap="2",
+                width="100%",
+                max_width="960px",
+                justify="start",
+                align="stretch",
             ),
             # Transcript section with toggle
             rx.vstack(
@@ -1431,27 +1616,31 @@ def job_detail(job_id: str = "") -> rx.Component:
                 rx.box(
                     rx.markdown(
                         rx.cond(
-                            AppState.current_summary == "",
+                            AppState.display_summary == "",
                             "*No summary available*",
-                            AppState.current_summary
+                            AppState.display_summary,
                         ),
                         component_map={
-                            "p": lambda text: rx.text(text, size="2", margin_bottom="1em", color="black"),
-                            "h1": lambda text: rx.heading(text, size="6", color="black", margin_bottom="0.5em"),
-                            "h2": lambda text: rx.heading(text, size="5", color="black", margin_bottom="0.5em"),
-                            "h3": lambda text: rx.heading(text, size="4", color="black", margin_bottom="0.5em"),
-                            "li": lambda text: rx.text(text, size="2", color="black"),
-                        }
+                            "p": lambda text: rx.text(text, size="2", margin_bottom="1em", color="#111827"),
+                            "h1": lambda text: rx.heading(text, size="6", color="#111827", margin_bottom="0.65em"),
+                            "h2": lambda text: rx.heading(text, size="5", color="#111827", margin_bottom="0.5em"),
+                            "h3": lambda text: rx.heading(text, size="4", color="#111827", margin_bottom="0.4em"),
+                            "li": lambda text: rx.text(text, size="2", color="#111827"),
+                        },
                     ),
                     border="1px solid",
                     border_color="gray.200",
-                    border_radius="8px",
-                    padding="16px",
+                    border_radius="12px",
+                    padding="18px",
                     width="100%",
-                    min_height="20vh",
                     bg="white",
-                    color="black",
-                    style={"lineHeight": "1.6", "color": "black"},
+                    style={
+                        "lineHeight": "1.75",
+                        "color": "#111827",
+                        "fontSize": "16px",
+                        "boxShadow": "0 12px 24px rgba(15,23,42,0.08)",
+                        "overflowX": "auto",
+                    },
                 ),
                 spacing="2",
                 align="start",
