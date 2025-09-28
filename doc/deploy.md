@@ -13,7 +13,9 @@ docker compose build
 docker compose up -d
 ```
 
-The compose file exposes `http://localhost:3000` and mounts a single volume:
+By default the service only listens on port `3000` inside the container (perfect for Dokploy/Traefik routing). If you want to reach it from the host while testing locally, add an override with `ports: ['3000:3000']`.
+
+The compose file mounts a single volume:
 
 - `focusflow-data` → `/data` (jobs, audio files, transcripts, summaries)
 
@@ -26,7 +28,7 @@ Stop with `docker compose down` (the volume keeps prior jobs).
    - `OPENAI_API_KEY`
    - Optional `ASSEMBLYAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL`, `DATA_DIR=/data`
 3. **Volumes** – attach a persistent volume to `/data`. (Optional prompt overrides can still mount to `/app/prompts`, but it is not required.)
-4. **Ports** – expose container port `3000` (Dokploy ingress/HTTPS as needed).
+4. **Ports** – configure Dokploy/Traefik to route to container port `3000` (no host publish necessary).
 5. **Deploy** – Dokploy builds the image (running `pnpm build`) and starts `node server.js` from the standalone output.
 6. **Smoke test** – submit a Plaud share link and confirm the date, audio download, and summary all complete.
 

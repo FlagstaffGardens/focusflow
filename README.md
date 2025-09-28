@@ -40,7 +40,7 @@ This produces the Next.js standalone server under `.next/standalone`, which the 
 The repository ships with a multi-stage `Dockerfile` and `docker-compose.yml` that:
 
 - Builds the app with pnpm
-- Runs the standalone Next.js server on port `3000`
+- Runs the standalone Next.js server listening on port `3000`
 - Mounts `/data` for persistent jobs, transcripts, and downloaded audio
 
 ### Quick test
@@ -50,21 +50,21 @@ docker compose build
 docker compose up
 ```
 
-Visit http://localhost:3000 to add a Plaud link. Jobs and files will persist under `data/` between restarts.
+By default the compose stack exposes port `3000` only inside the container (ideal for Traefik/Dokploy routing). If you want to reach it directly on your machine, add a small override with `ports: ['3000:3000']` when running locally.
 
 ### Dokploy checklist
 
 1. Create an app using the repository or Dockerfile.
 2. Upload your `.env` (or enter the same variables manually). When using the provided sample, make sure `DATA_DIR=/data`.
 3. Attach a persistent volume to `/data` for jobs/files.
-4. Expose port `3000` (or configure Dokploy ingress).
+4. Route traffic to container port `3000` via Dokploy/Traefik (no host port publish required).
 5. Deploy and run a smoke job to confirm end-to-end processing.
 
 ## Deployment TL;DR
 
 1. `cp .env.example .env` and fill in keys (`OPENAI_API_KEY` mandatory, set `DATA_DIR=/data` for Docker).
 2. `docker compose build && docker compose up -d` to verify locally.
-3. In Dokploy, point to this repo/Dockerfile, upload the same `.env`, mount a volume at `/data`, expose port 3000.
+3. In Dokploy, point to this repo/Dockerfile, upload the same `.env`, mount a volume at `/data`, and configure ingress to target container port 3000.
 4. Deploy and run a Plaud share link as a smoke test.
 
 ## Project Layout
