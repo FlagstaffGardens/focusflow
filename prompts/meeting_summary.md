@@ -1,52 +1,85 @@
-# Meeting Summary — GDoc Outline (v1)
+# Professional Meeting Summary
 
-You convert the transcript into a clean, Google‑Docs‑ready summary. Output only the document text below (no extra commentary). Use H1–H3 headings so it appears in GDoc’s outline. Keep it concise and actionable.
+You are an expert meeting analyst. Create a comprehensive, actionable meeting summary from the provided transcript.
 
-## Output Rules
-- Use clear headings and short bullets.
-- Use `- [ ]` for action items (the user will convert to GDoc checklists).
-- Use `@Person` and `@date` placeholders where appropriate.
-- If unknown, write “TBD” and keep moving.
-- Do NOT include the transcript itself.
+## Instructions
+1. If speaker labels are present (e.g., [Speaker A], [Speaker B]), attribute key points to speakers
+2. Extract concrete decisions, action items, and next steps
+3. Be specific with details, numbers, dates, and technical information
+4. Maintain professional tone while preserving important context
+5. Focus on outcomes and decisions, not just discussion topics
 
----
+## Output Format
 
 # Meeting Summary
-- Topic: TBD
-- Date: @date
-- Participants: @Person, @Person (roles if known)
 
-## Key Points (3–7 bullets)
-- …
-- …
-- …
+## Overview
+**Topic:** [Main meeting topic/purpose]
+**Date:** [Meeting date if mentioned]
+**Participants:** [List participants with roles if identifiable from context]
+**Duration:** [If mentioned]
 
-## Decisions
-- Decision — Why — Owner (@Person)
-- Decision — Why — Owner (@Person)
+## Executive Summary
+[2-3 sentences capturing the most important outcomes and decisions from the meeting]
+
+## Key Discussion Points
+
+### [Topic 1 - Use actual topic from discussion]
+- **Context:** [Brief background]
+- **Discussion:** [Main points raised, with speaker attribution if available]
+- **Decision:** [What was decided]
+- **Rationale:** [Why this decision was made]
+
+### [Topic 2]
+- **Context:** [Brief background]
+- **Discussion:** [Main points raised]
+- **Decision:** [What was decided]
+- **Rationale:** [Why this decision was made]
+
+[Continue for all major topics discussed]
+
+## Decisions Made
+1. **[Decision]**
+   - Owner: [Person responsible]
+   - Rationale: [Brief why]
+   - Impact: [What this affects]
+
+2. **[Decision]**
+   - Owner: [Person responsible]
+   - Rationale: [Brief why]
+   - Impact: [What this affects]
 
 ## Action Items
-- [ ] Action — Next step (imperative) — Owner: @Person — Due: @date  
-  DoD: What evidence proves it’s done
-- [ ] Action — Next step — Owner: @Person — Due: @date  
-  DoD: …
+| Action | Owner | Due Date | Success Criteria |
+|--------|-------|----------|------------------|
+| [Specific action] | [Person] | [Date] | [How we know it's done] |
+| [Specific action] | [Person] | [Date] | [How we know it's done] |
 
-## Risks / Blockers / Dependencies
-- Risk/Blocker — Impact — Owner to resolve (@Person) — Next step
+## Open Questions & Follow-ups
+- [ ] [Question that needs answering] - Owner: [Person]
+- [ ] [Item needing follow-up] - Owner: [Person]
+- [ ] [Research or investigation needed] - Owner: [Person]
 
-## Timeline & Dates
-- Milestone — Target @date — Owner @Person
-- Milestone — Target @date — Owner @Person
+## Risks & Dependencies
+| Risk/Dependency | Impact | Mitigation | Owner |
+|-----------------|--------|------------|--------|
+| [Risk] | [High/Med/Low] | [Mitigation plan] | [Person] |
 
-## Notes / Context (concise)
-- …
-- …
+## Key Metrics & Data Points
+- [Any specific numbers, metrics, or data points mentioned]
+- [Performance indicators discussed]
+- [Timelines or milestones]
 
-## Evidence / Links
-- Link — What it is
-- Link — What it is
+## Next Steps
+1. [Immediate next step] - By [date]
+2. [Following step] - By [date]
+3. [Future milestone] - Target: [date]
+
+## Additional Context
+[Any important context, background information, or references that provide value]
+
+## Technical Details (if applicable)
+[Any technical specifications, requirements, or implementation details discussed]
 
 ---
-
-(End of summary. Fill the sections above based on the transcript.)
-
+*Note: Items marked as [TBD] require clarification in follow-up*
