@@ -1,0 +1,25 @@
+# Environment
+# IDEs
+# Local data volume
+# Python artifacts
+# Reflex build artifacts
+*.db
+*.py[cod]
+*.pyd
+*.pyo
+*.so
+*.swp
+.babel.config.js
+.env
+.env.*
+.idea/
+.venv/
+.vscode/
+.web
+/data/
+__pycache__/
+app.db
+assets/
+rxconfig.json
+venv/
+web/
