@@ -661,6 +661,14 @@ class AppState(rx.State):
         j = self.current_job
         return str(j.get("meeting_date", "")) if j else ""
 
+    @rx.var
+    def current_title(self) -> str:
+        j = self.current_job
+        if j and j.get("title"):
+            return str(j.get("title"))
+        # Fallback to URL if no title
+        return str(j.get("url", "Job Detail")) if j else "Job Detail"
+
     def toggle_transcript(self):
         """Toggle transcript visibility."""
         self.transcript_open = not self.transcript_open
@@ -679,10 +687,10 @@ class AppState(rx.State):
                 if response.status_code == 200:
                     # Look for date in the HTML title or meta tags
                     # Plaud shows date in format like "2025-09-25 20:05:39"
-                    date_pattern = r'(\d{4}-\d{2}-\d{2})\s+\d{2}:\d{2}:\d{2}'
+                    date_pattern = r'(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})'
                     match = re.search(date_pattern, response.text)
                     if match:
-                        return match.group(1)  # Return just the date part
+                        return match.group(1)  # Return full datetime
             except Exception as e:
                 print(f"Could not fetch date from Plaud URL: {e}")
 
@@ -1213,9 +1221,10 @@ def _job_card(j: dict) -> rx.Component:
             rx.flex(
                 rx.button("View", size="3", variant="solid", on_click=lambda: AppState.goto_job(j["id"]), cursor="pointer"),
                 rx.button("Delete", size="3", variant="soft", color_scheme="red", on_click=lambda: AppState.delete_by_id(j["id"]), cursor="pointer"),
-                gap="2",
                 width="100%",
                 margin_top="2",
+                justify="between",
+                align="center",
             ),
             direction="column",  # Always stack for mobile-first
             align="center",
@@ -1315,7 +1324,7 @@ def job_detail(job_id: str = "") -> rx.Component:
             # Header section
             rx.vstack(
                 rx.hstack(
-                    rx.heading("Job Detail", size="7"),
+                    rx.heading(AppState.current_title, size="7"),
                     rx.badge(AppState.current_status, variant="soft", size="2"),
                     rx.spacer(),
                     rx.button("Re-summarize", size="2", on_click=AppState.regenerate_summary, variant="soft", cursor="pointer"),
@@ -1353,34 +1362,44 @@ def job_detail(job_id: str = "") -> rx.Component:
                         on_click=AppState.toggle_transcript,
                         cursor="pointer",
                     ),
-                    rx.spacer(),
-                    rx.button(
-                        "Copy",
-                        size="2",
-                        variant="soft",
-                        on_click=rx.set_clipboard(AppState.current_transcript),
-                        cursor="pointer",
-                    ),
                     width="100%",
                     align="center",
+                    justify="start",
                 ),
                 rx.cond(
                     AppState.transcript_open,
-                    rx.box(
-                        rx.text(
-                            rx.cond(AppState.current_transcript == "", "(empty)", AppState.current_transcript),
-                            white_space="pre-wrap",
-                            size="2",
+                    rx.vstack(
+                        rx.hstack(
+                            rx.spacer(),
+                            rx.button(
+                                "Copy",
+                                size="2",
+                                variant="soft",
+                                on_click=rx.set_clipboard(AppState.current_transcript),
+                                cursor="pointer",
+                            ),
+                            width="100%",
+                            justify="end",
+                            align="center",
                         ),
-                        padding="12px",
-                        max_height="45vh",
-                        overflow_y="auto",
-                        bg="gray.50",
-                        border="1px solid",
-                        border_color="gray.200",
-                        border_radius="6px",
+                        rx.box(
+                            rx.text(
+                                rx.cond(AppState.current_transcript == "", "(empty)", AppState.current_transcript),
+                                white_space="pre-wrap",
+                                size="2",
+                            ),
+                            padding="12px",
+                            max_height="45vh",
+                            overflow_y="auto",
+                            bg="gray.50",
+                            border="1px solid",
+                            border_color="gray.200",
+                            border_radius="6px",
+                            width="100%",
+                            style={"fontFamily": "ui-monospace, SFMono-Regular, Menlo, monospace"},
+                        ),
+                        spacing="2",
                         width="100%",
-                        style={"fontFamily": "ui-monospace, SFMono-Regular, Menlo, monospace"},
                     ),
                 ),
                 width="100%",
@@ -1390,7 +1409,25 @@ def job_detail(job_id: str = "") -> rx.Component:
             ),
             # Summary section - mobile optimized
             rx.vstack(
-                rx.heading("Summary", size="4"),
+                rx.flex(
+                    rx.heading("Summary", size="4"),
+                    rx.cond(
+                        AppState.current_summary == "",
+                        rx.fragment(),
+                        rx.button(
+                            "Copy",
+                            size="2",
+                            variant="soft",
+                            on_click=rx.set_clipboard(AppState.current_summary),
+                            cursor="pointer",
+                        ),
+                    ),
+                    align="center",
+                    justify="between",
+                    width="100%",
+                    wrap="wrap",
+                    row_gap="2",
+                ),
                 rx.box(
                     rx.markdown(
                         rx.cond(
