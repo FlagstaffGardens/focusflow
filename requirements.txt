@@ -1,2 +1,2 @@
-reflex==0.4.9.post1
+reflex==0.8.12
 requests==2.*

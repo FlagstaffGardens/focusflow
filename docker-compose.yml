@@ -5,17 +5,15 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      args:
-        PORT: 8080
     image: focusflow:latest
     ports:
       - "8080:8080"
     env_file:
       - .env
     environment:
-      PORT: 8080
+      # API URL for frontend to connect to backend
       REFLEX_API_URL: http://localhost:8080
-      REFLEX_REDIS_URL: redis://localhost
+      # Data storage
       FILES_DIR: /data/files
       DATABASE_URL: sqlite:////data/app.db
       # Pass through API keys from .env file
@@ -26,6 +24,12 @@ services:
     volumes:
       - focusflow-data:/data
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
 volumes:
   focusflow-data:

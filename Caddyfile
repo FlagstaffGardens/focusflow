@@ -1,0 +1,43 @@
+:8080 {
+    # Handle WebSocket connections for Reflex backend
+    handle_path /socket.io/* {
+        reverse_proxy localhost:8000
+    }
+
+    # Handle API routes to backend
+    handle_path /api/* {
+        reverse_proxy localhost:8000
+    }
+
+    # Handle backend routes (like _upload, _submit, etc.)
+    handle_path /_* {
+        reverse_proxy localhost:8000
+    }
+
+    # Handle all other requests with frontend static files
+    handle {
+        root * /var/www/html
+        try_files {path} {path}/ /index.html
+        file_server
+    }
+
+    # Add proper headers
+    header {
+        # Enable CORS if needed
+        Access-Control-Allow-Origin *
+        Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+        Access-Control-Allow-Headers "Content-Type, Authorization"
+
+        # Security headers
+        X-Frame-Options DENY
+        X-Content-Type-Options nosniff
+        X-XSS-Protection "1; mode=block"
+    }
+
+    # Logging
+    log {
+        output stdout
+        format console
+        level INFO
+    }
+}

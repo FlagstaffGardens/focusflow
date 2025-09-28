@@ -48,7 +48,6 @@ doc/
 # Development files
 .devcontainer/
 docker-compose.yml
-Caddyfile
 
 # OS files
 .DS_Store
