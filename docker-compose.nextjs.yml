@@ -1,0 +1,26 @@
+services:
+  focusflow-next:
+    build:
+      context: .
+      dockerfile: Dockerfile.nextjs
+    ports:
+      - "8080:8080"
+    environment:
+      # Runtime environment variables - these work properly!
+      - ASSEMBLYAI_API_KEY=${ASSEMBLYAI_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4}
+      - PORT=8080
+      - DATA_DIR=/data
+    volumes:
+      # Persist data between restarts
+      - ./data:/data
+      # Mount prompts for easy updates
+      - ./prompts:/app/prompts:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3

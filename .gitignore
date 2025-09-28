@@ -25,3 +25,4 @@ assets/
 rxconfig.json
 venv/
 web/
+node_modules
