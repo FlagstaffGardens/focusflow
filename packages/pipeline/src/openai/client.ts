@@ -163,7 +163,34 @@ export async function generateTitle(
   }
 
   try {
-    const response = await fetch(`${baseUrl}/v1/chat/completions`, {
+    // Load title generator prompt
+    const promptPath = process.env.PROMPT_PATH?.replace('meeting_summary.md', 'title_generator.md')
+      || path.resolve(process.cwd(), '../../prompts/title_generator.md')
+    let titlePrompt = ''
+    try {
+      titlePrompt = readFileSync(promptPath, 'utf-8')
+    } catch (e) {
+      log(`Failed to load title prompt, using default`)
+      titlePrompt = `Generate a concise, descriptive title for this meeting.
+
+## Requirements
+- Maximum 50 characters
+- Capture the main topic or purpose
+- Be specific and actionable
+- NO quotes, hashtags, or special formatting
+- Return ONLY the title text
+
+## Meeting Content
+[The meeting transcript/summary will be inserted here]`
+    }
+
+    // Replace placeholder with summary
+    const renderedPrompt = titlePrompt.replace(
+      '[The meeting transcript/summary will be inserted here]',
+      summary.slice(0, 2000)
+    )
+
+    const response = await fetch(`${baseUrl}/v1/responses`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -171,24 +198,67 @@ export async function generateTitle(
       },
       body: JSON.stringify({
         model,
-        messages: [
+        input: [
           {
+            type: 'message',
             role: 'user',
-            content: `Generate a concise meeting title (max 60 chars) based on the summary:\n\n${summary.slice(0, 1000)}`,
+            content: renderedPrompt,
           },
         ],
         temperature: 0.2,
-        max_tokens: 20,
+        stream: true,
       }),
     })
 
-    if (response.ok) {
-      const data = await response.json() as any
-      const title = data.choices?.[0]?.message?.content?.trim()
-      if (title) {
-        log(`Generated title: ${title}`)
-        return title
+    if (!response.ok) {
+      const error = await response.text()
+      log(`Title API error: ${response.status} - ${error.slice(0, 200)}`)
+      throw new Error(`Title API failed: ${response.status}`)
+    }
+
+    // Process streaming response
+    let fullTitle = ''
+    const decoder = new TextDecoder()
+    const reader = response.body?.getReader()
+
+    if (!reader) {
+      throw new Error('No response body')
+    }
+
+    let buffer = ''
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() || ''
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const data = line.slice(6).trim()
+          if (!data || data === '[DONE]') continue
+
+          try {
+            const event = JSON.parse(data)
+            if (event.type === 'response.output_text.delta') {
+              fullTitle += event.text || ''
+            } else if (event.type === 'response.output_text.done') {
+              fullTitle = event.text || fullTitle
+            } else if (event.type === 'response.content_part.delta') {
+              fullTitle += event.part?.text || ''
+            }
+          } catch (e) {
+            // Skip invalid JSON
+          }
+        }
       }
+    }
+
+    const title = fullTitle.trim().slice(0, 50)
+    if (title) {
+      log(`Generated title: ${title}`)
+      return title
     }
   } catch (error) {
     log(`Title generation failed: ${error}`)

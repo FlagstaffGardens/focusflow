@@ -3,7 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.resolvePlaudAudioUrl = resolvePlaudAudioUrl;
 const undici_1 = require("undici");
 /**
- * Resolve a Plaud share URL to a direct audio URL
+ * Resolve a Plaud share URL to a direct audio URL and extract metadata
  * Tries multiple strategies in order:
  * 1. temp_url API
  * 2. share-content API
@@ -12,12 +12,41 @@ const undici_1 = require("undici");
  */
 async function resolvePlaudAudioUrl(url, log) {
     if (!url.includes('plaud.ai')) {
-        return url;
+        return { audioUrl: url };
     }
     log('Resolving Plaud link...');
     // Extract token from URL
     const tokenMatch = url.match(/\/share\/([0-9a-zA-Z]+)/);
     const token = tokenMatch?.[1];
+    // First, fetch the HTML page to extract meeting date
+    let meetingDate;
+    try {
+        log(`Fetching HTML page to extract meeting date...`);
+        const response = await (0, undici_1.fetch)(url, {
+            headers: { 'User-Agent': 'Mozilla/5.0' },
+        });
+        if (response.ok) {
+            const html = await response.text();
+            const titleMatch = html.match(/<title>([^<]+)<\/title>/i);
+            log(`Title found: ${titleMatch ? titleMatch[1] : 'none'}`);
+            if (titleMatch) {
+                // Try to parse date from title like "2025-09-25 20:05:39"
+                const dateMatch = titleMatch[1].match(/(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})/);
+                if (dateMatch) {
+                    // Parse the date properly - assuming it's in local time
+                    const [datePart, timePart] = dateMatch[1].split(' ');
+                    meetingDate = new Date(`${datePart}T${timePart}`).toISOString();
+                    log(`Meeting date extracted from title: ${meetingDate}`);
+                }
+                else {
+                    log(`No date pattern found in title`);
+                }
+            }
+        }
+    }
+    catch (error) {
+        log(`Failed to extract meeting date: ${error}`);
+    }
     if (token) {
         // Try temp API first
         try {
@@ -35,7 +64,7 @@ async function resolvePlaudAudioUrl(url, log) {
                         const val = data[key];
                         if (typeof val === 'string' && val.startsWith('http')) {
                             log(`Plaud API resolved (temp) → ${val}`);
-                            return val;
+                            return { audioUrl: val, meetingDate };
                         }
                     }
                 }
@@ -44,7 +73,7 @@ async function resolvePlaudAudioUrl(url, log) {
                     const match = text.match(/https?:\/\/[^"'\s]+\.(?:mp3|m4a|wav)(?:\?[^"'\s]*)?/);
                     if (match) {
                         log(`Plaud API resolved (regex) → ${match[0]}`);
-                        return match[0];
+                        return { audioUrl: match[0], meetingDate };
                     }
                 }
             }
@@ -61,11 +90,25 @@ async function resolvePlaudAudioUrl(url, log) {
             if (response.ok) {
                 const data = await response.json();
                 const content = data.data || data;
+                // Extract meeting date if available
+                let meetingDate;
+                if (content.createTime) {
+                    meetingDate = new Date(content.createTime).toISOString();
+                    log(`Meeting date extracted: ${meetingDate}`);
+                }
+                else if (content.timestamp) {
+                    meetingDate = new Date(content.timestamp).toISOString();
+                    log(`Meeting date extracted: ${meetingDate}`);
+                }
                 const keys = ['fileUrl', 'audioUrl', 'url'];
                 for (const key of keys) {
                     if (content[key] && typeof content[key] === 'string') {
                         log(`Plaud content API resolved → ${content[key]}`);
-                        return content[key];
+                        return {
+                            audioUrl: content[key],
+                            meetingDate,
+                            title: content.title || content.name
+                        };
                     }
                 }
             }
@@ -81,21 +124,43 @@ async function resolvePlaudAudioUrl(url, log) {
         });
         if (response.ok) {
             const html = await response.text();
+            // Extract meeting date from title or meta tags
+            let meetingDate;
+            const titleMatch = html.match(/<title>([^<]+)<\/title>/i);
+            if (titleMatch) {
+                // Try to parse date from title like "2025-09-25 20:05:39"
+                const dateMatch = titleMatch[1].match(/(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})/);
+                if (dateMatch) {
+                    // Parse the date properly - assuming it's in local time
+                    const [datePart, timePart] = dateMatch[1].split(' ');
+                    meetingDate = new Date(`${datePart}T${timePart}`).toISOString();
+                    log(`Meeting date extracted from title: ${meetingDate}`);
+                }
+            }
             // Look for direct audio links
             const audioLinks = html.matchAll(/https?:\/\/[^'"\s]+\.(?:mp3|m4a|wav)\b/gi);
             for (const match of audioLinks) {
                 log(`Plaud resolved (html) → ${match[0]}`);
-                return match[0];
+                return { audioUrl: match[0], meetingDate };
             }
             // Look for __NEXT_DATA__ JSON
             const nextDataMatch = html.match(/<script[^>]*id="__NEXT_DATA__"[^>]*>(.*?)<\/script>/si);
             if (nextDataMatch) {
                 try {
                     const data = JSON.parse(nextDataMatch[1]);
+                    // Extract meeting date from Next.js data
+                    let meetingDate;
+                    const pageProps = data?.props?.pageProps;
+                    if (pageProps?.createTime) {
+                        meetingDate = new Date(pageProps.createTime).toISOString();
+                    }
+                    else if (pageProps?.timestamp) {
+                        meetingDate = new Date(pageProps.timestamp).toISOString();
+                    }
                     const audioUrl = findAudioUrlInObject(data);
                     if (audioUrl) {
                         log(`Plaud resolved (next) → ${audioUrl}`);
-                        return audioUrl;
+                        return { audioUrl, meetingDate, title: pageProps?.title || pageProps?.name };
                     }
                 }
                 catch {
@@ -108,17 +173,17 @@ async function resolvePlaudAudioUrl(url, log) {
                 const url = candidate.replace(/\\u002F/g, '/');
                 if (/\.(mp3|m4a|wav)$/i.test(url)) {
                     log(`Plaud resolved (json) → ${url}`);
-                    return url;
+                    return { audioUrl: url };
                 }
             }
         }
     }
     catch (error) {
         log(`Plaud resolution error: ${error}; using original URL`);
-        return url;
+        return { audioUrl: url };
     }
     log('Plaud resolution failed; using original URL');
-    return url;
+    return { audioUrl: url };
 }
 function findAudioUrlInObject(obj) {
     if (typeof obj === 'string') {

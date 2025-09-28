@@ -80,12 +80,21 @@ class SimpleJobQueue {
             this.store.updateJob(job.id, { status: 'resolving' });
             // Step 1: Resolve Plaud URL
             if (!job.resolved_url || job.checkpoint?.step === 'resolve') {
-                const resolvedUrl = await (0, resolver_1.resolvePlaudAudioUrl)(job.url, log);
-                this.store.updateJob(job.id, {
-                    resolved_url: resolvedUrl,
+                const metadata = await (0, resolver_1.resolvePlaudAudioUrl)(job.url, log);
+                // Always update meeting_date if we found one
+                const updates = {
+                    resolved_url: metadata.audioUrl,
                     checkpoint: { step: 'download' }
-                });
-                job.resolved_url = resolvedUrl;
+                };
+                if (metadata.meetingDate) {
+                    updates.meeting_date = metadata.meetingDate;
+                    log(`Updated meeting date to: ${metadata.meetingDate}`);
+                }
+                this.store.updateJob(job.id, updates);
+                job.resolved_url = metadata.audioUrl;
+                if (metadata.meetingDate) {
+                    job.meeting_date = metadata.meetingDate;
+                }
             }
             this.checkTimeout(job);
             // Step 2: Download audio
