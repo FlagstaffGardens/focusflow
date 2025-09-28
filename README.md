@@ -42,7 +42,6 @@ The repository ships with a multi-stage `Dockerfile` and `docker-compose.yml` th
 - Builds the app with pnpm
 - Runs the standalone Next.js server on port `8080`
 - Mounts `/data` for persistent jobs, transcripts, and downloaded audio
-- Mounts `/app/prompts` read-only so prompt tweaks do not require rebuilding
 
 ### Quick test
 
@@ -57,7 +56,7 @@ Visit http://localhost:8080 to add a Plaud link. Jobs and files will persist und
 
 1. Create an app using the repository or Dockerfile.
 2. Upload your `.env` (or enter the same variables manually). When using the provided sample, make sure `DATA_DIR=/data`.
-3. Attach a persistent volume to `/data` for jobs/files. (Optional: mount `/app/prompts` to override prompts.)
+3. Attach a persistent volume to `/data` for jobs/files.
 4. Expose port `8080` (or configure Dokploy ingress).
 5. Deploy and run a smoke job to confirm end-to-end processing.
 
@@ -82,7 +81,7 @@ prompts/
 
 ## Customising Prompts
 
-Edit the files in `prompts/` locally. In Docker/Dokploy deployments mount an override directory to `/app/prompts` to change prompts without rebuilding.
+Edit the files in `prompts/` locally. They are baked into the image; if you need runtime overrides you can still mount a directory to `/app/prompts`, but it’s optional.
 
 ## Scripts
 

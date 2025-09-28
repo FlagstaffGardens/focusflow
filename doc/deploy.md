@@ -13,10 +13,9 @@ docker compose build
 docker compose up -d
 ```
 
-The compose file exposes `http://localhost:8080` and mounts:
+The compose file exposes `http://localhost:8080` and mounts a single volume:
 
 - `focusflow-data` → `/data` (jobs, audio files, transcripts, summaries)
-- `./prompts` → `/app/prompts` (read-only prompt overrides)
 
 Stop with `docker compose down` (the volume keeps prior jobs).
 
@@ -26,7 +25,7 @@ Stop with `docker compose down` (the volume keeps prior jobs).
 2. **Environment variables** – upload the repo `.env` or enter values manually. Ensure `DATA_DIR=/data` inside the container. Required keys:
    - `OPENAI_API_KEY`
    - Optional `ASSEMBLYAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL`, `DATA_DIR=/data`
-3. **Volumes** – attach a persistent volume to `/data`. Optionally attach a config volume to `/app/prompts` for prompt overrides.
+3. **Volumes** – attach a persistent volume to `/data`. (Optional prompt overrides can still mount to `/app/prompts`, but it is not required.)
 4. **Ports** – expose container port `8080` (Dokploy ingress/HTTPS as needed).
 5. **Deploy** – Dokploy builds the image (running `pnpm build`) and starts `node server.js` from the standalone output.
 6. **Smoke test** – submit a Plaud share link and confirm the date, audio download, and summary all complete.
@@ -34,7 +33,7 @@ Stop with `docker compose down` (the volume keeps prior jobs).
 ## Updating
 
 - Rebuild the image (Dokploy redeploy) after code changes.
-- Prompt tweaks only: update the mounted prompts volume and restart the container (no rebuild required).
+- Prompt tweaks only: either rebuild the image or temporarily mount a directory to `/app/prompts` (optional override).
 - To clear state, stop the container and remove the `/data` volume.
 
 ## Troubleshooting
