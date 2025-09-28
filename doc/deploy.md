@@ -23,7 +23,7 @@ Stop with `docker compose down` (the volume keeps prior jobs).
 ## Dokploy Deployment
 
 1. **Create application** – choose *Docker* (build from repo) or *Docker Compose* and point to `docker-compose.yml`.
-2. **Environment variables** – set at least:
+2. **Environment variables** – upload the repo `.env` or enter values manually. Ensure `DATA_DIR=/data` inside the container. Required keys:
    - `OPENAI_API_KEY`
    - Optional `ASSEMBLYAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL`, `DATA_DIR=/data`
 3. **Volumes** – attach a persistent volume to `/data`. Optionally attach a config volume to `/app/prompts` for prompt overrides.

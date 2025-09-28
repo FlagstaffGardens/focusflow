@@ -23,9 +23,9 @@ Environment variables:
 - `OPENAI_BASE_URL` *(optional, defaults to https://api.openai.com)*
 - `OPENAI_MODEL` *(optional, defaults to gpt-4)*
 - `ASSEMBLYAI_API_KEY` *(optional, enables transcription)*
-- `DATA_DIR` *(optional, defaults to ./data)*
+- `DATA_DIR` *(default `./data` locally; set `/data` inside Docker/Dokploy)*
 
-Copy `.env.example` to `.env` and populate the keys before running `pnpm dev`.
+Copy `.env.example` to `.env` and fill in the values. This same `.env` file can be reused in Dokploy—just ensure `DATA_DIR=/data` when running in containers.
 
 ## Production Build
 
@@ -56,10 +56,17 @@ Visit http://localhost:8080 to add a Plaud link. Jobs and files will persist und
 ### Dokploy checklist
 
 1. Create an app using the repository or Dockerfile.
-2. Set environment variables (`OPENAI_API_KEY`, optional `ASSEMBLYAI_API_KEY`, etc.).
-3. Attach a volume to `/data` for persisted jobs/files. (Optional: mount `/app/prompts` to override prompts.)
+2. Upload your `.env` (or enter the same variables manually). When using the provided sample, make sure `DATA_DIR=/data`.
+3. Attach a persistent volume to `/data` for jobs/files. (Optional: mount `/app/prompts` to override prompts.)
 4. Expose port `8080` (or configure Dokploy ingress).
 5. Deploy and run a smoke job to confirm end-to-end processing.
+
+## Deployment TL;DR
+
+1. `cp .env.example .env` and fill in keys (`OPENAI_API_KEY` mandatory, set `DATA_DIR=/data` for Docker).
+2. `docker compose build && docker compose up -d` to verify locally.
+3. In Dokploy, point to this repo/Dockerfile, upload the same `.env`, mount a volume at `/data`, expose port 8080.
+4. Deploy and run a Plaud share link as a smoke test.
 
 ## Project Layout
 
