@@ -1,5 +1,8 @@
 # FocusFlow Next.js MVP Migration Spec
 
+> **Current State**
+> The migration is complete: the production code now lives in a single Next.js app (routes under `app/`, shared pipeline in `lib/pipeline/`). References to `apps/web` in this document reflect the original plan and are kept for historical context only.
+
 ## 1. Goals
 - Replace the Reflex UI with a maintainable Next.js 15 (App Router) build while keeping the existing speech → summary workflow intact.
 - Ship an MVP that mirrors today’s behaviour: Plaud resolution, audio download, optional AssemblyAI transcription, GPT summarization, log streaming, and persistence to the filesystem under `data/`.
@@ -232,4 +235,3 @@ Total: ~8 working days. Add buffer for polishing UI or handling edge cases.
 - Start with single-process deployment; introduce extra processes later if necessary.
 - Use direct filesystem operations instead of ORM/database layers.
 - Emit actionable error messages with suggested recovery steps.
-

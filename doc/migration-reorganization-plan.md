@@ -1,5 +1,8 @@
 # FocusFlow Repo Reorganization Plan
 
+> **Update**
+> The plan below describes the transition from the Reflex monorepo to the Next.js workspace. The live repository has since been flattened: the app is under the root `app/` directory and the shared pipeline code under `lib/pipeline/`.
+
 ## Overview
 Managing the Next.js migration within the same repository while preserving the Reflex implementation for reference.
 
