@@ -32,4 +32,4 @@ EXPOSE 8080
 
 # Run Reflex in production mode
 # The app will read environment variables at runtime
-CMD reflex run --env prod --host 0.0.0.0 --port 8080
+CMD reflex run --env prod --backend-host 0.0.0.0 --backend-port 8080
