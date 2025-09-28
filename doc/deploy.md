@@ -13,7 +13,7 @@ docker compose build
 docker compose up -d
 ```
 
-The compose file exposes `http://localhost:8080` and mounts a single volume:
+The compose file exposes `http://localhost:3000` and mounts a single volume:
 
 - `focusflow-data` → `/data` (jobs, audio files, transcripts, summaries)
 
@@ -26,7 +26,7 @@ Stop with `docker compose down` (the volume keeps prior jobs).
    - `OPENAI_API_KEY`
    - Optional `ASSEMBLYAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL`, `DATA_DIR=/data`
 3. **Volumes** – attach a persistent volume to `/data`. (Optional prompt overrides can still mount to `/app/prompts`, but it is not required.)
-4. **Ports** – expose container port `8080` (Dokploy ingress/HTTPS as needed).
+4. **Ports** – expose container port `3000` (Dokploy ingress/HTTPS as needed).
 5. **Deploy** – Dokploy builds the image (running `pnpm build`) and starts `node server.js` from the standalone output.
 6. **Smoke test** – submit a Plaud share link and confirm the date, audio download, and summary all complete.
 

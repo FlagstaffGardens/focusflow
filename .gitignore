@@ -17,6 +17,7 @@ tmp-job-data/
 # Environment files
 .env
 .env.*
+!.env.example
 
 # Editors & OS
 .vscode/
