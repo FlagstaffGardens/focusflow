@@ -1,28 +1,28 @@
-assets/external/
-.states
-# Environment
-# IDEs
-# Local data volume
-# Python artifacts
-# Reflex build artifacts
-*.db
-*.py[cod]
-*.pyd
-*.pyo
-*.so
-*.swp
-.babel.config.js
+# Node & package managers
+node_modules/
+.pnpm-store/
+.pnp*
+*.log
+
+# Build output
+.next/
+out/
+dist/
+coverage/
+
+# Local data
+data/
+tmp-job-data/
+
+# Environment files
 .env
 .env.*
-.idea/
-.venv/
+
+# Editors & OS
 .vscode/
-.web
-/data/
-__pycache__/
-app.db
-assets/
-rxconfig.json
-venv/
-web/
-node_modules
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~

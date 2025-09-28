@@ -28,7 +28,7 @@ Stop with `docker compose down` (the volume keeps prior jobs).
    - Optional `ASSEMBLYAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL`, `DATA_DIR=/data`
 3. **Volumes** – attach a persistent volume to `/data`. Optionally attach a config volume to `/app/prompts` for prompt overrides.
 4. **Ports** – expose container port `8080` (Dokploy ingress/HTTPS as needed).
-5. **Deploy** – Dokploy will run `pnpm -r build` inside the image and start `node server.js`.
+5. **Deploy** – Dokploy builds the image (running `pnpm build`) and starts `node server.js` from the standalone output.
 6. **Smoke test** – submit a Plaud share link and confirm the date, audio download, and summary all complete.
 
 ## Updating

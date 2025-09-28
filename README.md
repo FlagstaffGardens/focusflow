@@ -1,6 +1,6 @@
 # FocusFlow
 
-FocusFlow ingests Plaud.ai share links or direct audio URLs, downloads the audio, runs transcription, and generates meeting summaries with GPT. The current stack is Next.js 15 (App Router) with a shared TypeScript pipeline library.
+FocusFlow ingests Plaud.ai share links or direct audio URLs, downloads the audio, runs transcription, and generates meeting summaries with GPT. The stack is a single Next.js 15 (App Router) application with the pipeline logic colocated under `lib/`.
 
 ## Features
 
@@ -30,16 +30,16 @@ Copy `.env.example` to `.env` and fill in the values. This same `.env` file can 
 ## Production Build
 
 ```bash
-pnpm -r build     # builds the pipeline package + Next.js app
+pnpm build        # creates the production build in .next/
 ```
 
-This generates the standalone server under `apps/web/.next/standalone` which the Docker image uses at runtime.
+This produces the Next.js standalone server under `.next/standalone`, which the Docker image copies during the final stage.
 
 ## Docker / Dokploy
 
 The repository ships with a multi-stage `Dockerfile` and `docker-compose.yml` that:
 
-- Builds the monorepo with pnpm
+- Builds the app with pnpm
 - Runs the standalone Next.js server on port `8080`
 - Mounts `/data` for persistent jobs, transcripts, and downloaded audio
 - Mounts `/app/prompts` read-only so prompt tweaks do not require rebuilding
@@ -71,10 +71,10 @@ Visit http://localhost:8080 to add a Plaud link. Jobs and files will persist und
 ## Project Layout
 
 ```
-apps/
-  web/                 # Next.js app (UI + API routes/queue)
-packages/
-  pipeline/            # Shared TypeScript pipeline logic (Plaud resolver, downloads, AI clients)
+app/                   # App Router routes & layouts
+components/            # UI components
+lib/
+  pipeline/            # Job queue, Plaud resolver, AI clients
 prompts/
   meeting_summary.md   # Summary template
   title_generator.md   # Title template
@@ -87,9 +87,10 @@ Edit the files in `prompts/` locally. In Docker/Dokploy deployments mount an ove
 ## Scripts
 
 - `pnpm dev` – run the Next.js dev server
-- `pnpm -r build` – build both the pipeline package and the Next.js app
-- `pnpm --filter @focusflow/web start` – start the production server (expects prior build)
-- `pnpm --filter @focusflow/web type-check` – TypeScript check for the app
+- `pnpm build` – generate the production build
+- `pnpm start` – serve the prebuilt app (`pnpm build` first)
+- `pnpm lint` – lint with Next.js defaults
+- `pnpm type-check` – TypeScript project check
 
 ## Smoke Test
 

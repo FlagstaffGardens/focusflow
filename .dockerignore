@@ -11,10 +11,9 @@ pnpm-debug.log*
 .pnp*
 
 # Build caches
-apps/web/.next
-apps/web/out
-apps/web/dist
-packages/pipeline/dist
+.next
+out
+dist
 
 # Local data & artifacts
 data/

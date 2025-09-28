@@ -9,15 +9,13 @@ WORKDIR /app
 
 # ---------- Install dependencies ----------
 FROM base AS deps
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY apps/web/package.json apps/web/
-COPY packages/pipeline/package.json packages/pipeline/
+COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
 
 # ---------- Build workspace ----------
 FROM deps AS build
 COPY . .
-RUN pnpm -r build
+RUN pnpm build
 
 # ---------- Production runtime ----------
 FROM node:20-alpine AS runner
@@ -28,9 +26,9 @@ ENV NODE_ENV=production
 ENV PORT=8080
 ENV DATA_DIR=/data
 
-COPY --from=build /app/apps/web/.next/standalone ./
-COPY --from=build /app/apps/web/.next/static ./apps/web/.next/static
-COPY --from=build /app/apps/web/public ./apps/web/public
+COPY --from=build /app/.next/standalone ./
+COPY --from=build /app/.next/static ./.next/static
+COPY --from=build /app/public ./public
 COPY --from=build /app/prompts ./prompts
 
 RUN mkdir -p /data && chown -R node:node /data && chown -R node:node /app
