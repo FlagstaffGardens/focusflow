@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -37,7 +37,7 @@ export default function Home() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [jobs, setJobs] = useState<Job[]>([])
-  const [selectedJob, setSelectedJob] = useState<Job | null>(null)
+  const [selectedJobId, setSelectedJobId] = useState<string | null>(null)
   const [url, setUrl] = useState('')
   const [loading, setLoading] = useState(false)
   const [envStatus, setEnvStatus] = useState<EnvStatus>({ assemblyai: false, openai: false })
@@ -47,6 +47,11 @@ export default function Home() {
   const [copiedTranscript, setCopiedTranscript] = useState(false)
   const [copiedSummary, setCopiedSummary] = useState(false)
   const isMobile = useMobile()
+
+  const selectedJob = useMemo(() => {
+    if (!selectedJobId) return null
+    return jobs.find(job => job.id === selectedJobId) ?? null
+  }, [jobs, selectedJobId])
 
   // Fetch environment status
   useEffect(() => {
@@ -104,9 +109,10 @@ export default function Home() {
 
   // Handle job selection with URL update
   const selectJob = useCallback((job: Job | null) => {
-    setSelectedJob(job)
-    if (job) {
-      router.push(`/?job=${job.id}`)
+    const nextId = job?.id ?? null
+    setSelectedJobId(nextId)
+    if (nextId) {
+      router.push(`/?job=${nextId}`)
     } else {
       router.push('/')
     }
@@ -115,13 +121,16 @@ export default function Home() {
   // Load job from URL on mount and when jobs change
   useEffect(() => {
     const jobId = searchParams.get('job')
-    if (jobId && jobs.length > 0) {
-      const job = jobs.find(j => j.id === jobId)
-      if (job && (!selectedJob || selectedJob.id !== job.id)) {
-        setSelectedJob(job)
-      }
+    if (jobId) {
+      setSelectedJobId(prev => (prev === jobId ? prev : jobId))
+      return
     }
-  }, [searchParams, jobs, selectedJob])
+
+    // Clear selection if the currently selected job no longer exists
+    if (selectedJobId && !jobs.some(job => job.id === selectedJobId)) {
+      setSelectedJobId(null)
+    }
+  }, [searchParams, jobs, selectedJobId])
 
   useEffect(() => {
     fetchJobs()

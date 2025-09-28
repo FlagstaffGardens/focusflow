@@ -26,21 +26,27 @@ export async function resolvePlaudAudioUrl(
 
   log('Resolving Plaud link...')
 
+  const normalizedHtmlUrl = normalizePlaudShareHtmlUrl(url)
+  if (normalizedHtmlUrl !== url) {
+    log(`Normalized Plaud URL for HTML fetch → ${normalizedHtmlUrl}`)
+  }
+
   // Extract token from URL
   const tokenMatch = url.match(/\/share\/([0-9a-zA-Z]+)/)
   const token = tokenMatch?.[1]
 
-  // First, fetch the HTML page to extract meeting date
+  // First, fetch the HTML page to extract meeting date AND keep it for later parsing if needed
   let meetingDate: string | undefined
+  let htmlContent: string | undefined
   try {
     log(`Fetching HTML page to extract meeting date...`)
-    const response = await fetch(url, {
+    const response = await fetch(normalizedHtmlUrl, {
       headers: { 'User-Agent': 'Mozilla/5.0' },
     })
 
     if (response.ok) {
-      const html = await response.text()
-      const titleMatch = html.match(/<title>([^<]+)<\/title>/i)
+      htmlContent = await response.text()
+      const titleMatch = htmlContent.match(/<title>([^<]+)<\/title>/i)
       log(`Title found: ${titleMatch ? titleMatch[1] : 'none'}`)
 
       if (titleMatch) {
@@ -106,14 +112,15 @@ export async function resolvePlaudAudioUrl(
         const data = await response.json() as any
         const content = data.data || data
 
-        // Extract meeting date if available
-        let meetingDate: string | undefined
-        if (content.createTime) {
-          meetingDate = new Date(content.createTime).toISOString()
-          log(`Meeting date extracted: ${meetingDate}`)
-        } else if (content.timestamp) {
-          meetingDate = new Date(content.timestamp).toISOString()
-          log(`Meeting date extracted: ${meetingDate}`)
+        // Extract meeting date if available (only if we don't already have one from HTML)
+        if (!meetingDate) {
+          if (content.createTime) {
+            meetingDate = new Date(content.createTime).toISOString()
+            log(`Meeting date extracted from API: ${meetingDate}`)
+          } else if (content.timestamp) {
+            meetingDate = new Date(content.timestamp).toISOString()
+            log(`Meeting date extracted from API: ${meetingDate}`)
+          }
         }
 
         const keys = ['fileUrl', 'audioUrl', 'url']
@@ -133,48 +140,31 @@ export async function resolvePlaudAudioUrl(
     }
   }
 
-  // Fallback: parse HTML page
-  try {
-    const response = await fetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0' },
-    })
-
-    if (response.ok) {
-      const html = await response.text()
-
-      // Extract meeting date from title or meta tags
-      let meetingDate: string | undefined
-      const titleMatch = html.match(/<title>([^<]+)<\/title>/i)
-      if (titleMatch) {
-        // Try to parse date from title like "2025-09-25 20:05:39"
-        const dateMatch = titleMatch[1].match(/(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})/)
-        if (dateMatch) {
-          // Parse the date properly - assuming it's in local time
-          const [datePart, timePart] = dateMatch[1].split(' ')
-          meetingDate = new Date(`${datePart}T${timePart}`).toISOString()
-          log(`Meeting date extracted from title: ${meetingDate}`)
-        }
-      }
-
+  // Fallback: parse HTML content for audio URLs (we already have the HTML from earlier)
+  if (htmlContent) {
+    try {
       // Look for direct audio links
-      const audioLinks = html.matchAll(/https?:\/\/[^'"\s]+\.(?:mp3|m4a|wav)\b/gi)
+      const audioLinks = htmlContent.matchAll(/https?:\/\/[^'"\s]+\.(?:mp3|m4a|wav)\b/gi)
       for (const match of audioLinks) {
         log(`Plaud resolved (html) → ${match[0]}`)
         return { audioUrl: match[0], meetingDate }
       }
 
       // Look for __NEXT_DATA__ JSON
-      const nextDataMatch = html.match(/<script[^>]*id="__NEXT_DATA__"[^>]*>(.*?)<\/script>/si)
+      const nextDataMatch = htmlContent.match(/<script[^>]*id="__NEXT_DATA__"[^>]*>(.*?)<\/script>/si)
       if (nextDataMatch) {
         try {
           const data = JSON.parse(nextDataMatch[1])
-          // Extract meeting date from Next.js data
-          let meetingDate: string | undefined
+          // Extract meeting date from Next.js data (only if we don't have one already)
           const pageProps = data?.props?.pageProps
-          if (pageProps?.createTime) {
-            meetingDate = new Date(pageProps.createTime).toISOString()
-          } else if (pageProps?.timestamp) {
-            meetingDate = new Date(pageProps.timestamp).toISOString()
+          if (!meetingDate) {
+            if (pageProps?.createTime) {
+              meetingDate = new Date(pageProps.createTime).toISOString()
+              log(`Meeting date extracted from Next.js data: ${meetingDate}`)
+            } else if (pageProps?.timestamp) {
+              meetingDate = new Date(pageProps.timestamp).toISOString()
+              log(`Meeting date extracted from Next.js data: ${meetingDate}`)
+            }
           }
 
           const audioUrl = findAudioUrlInObject(data)
@@ -188,22 +178,21 @@ export async function resolvePlaudAudioUrl(
       }
 
       // Look for JSON audio URLs in HTML
-      const jsonUrls = html.matchAll(/"(audioUrl|audio_url|url|source|src)"\s*:\s*"(https?:\/\/[^"]+)"/gi)
+      const jsonUrls = htmlContent.matchAll(/"(audioUrl|audio_url|url|source|src)"\s*:\s*"(https?:\/\/[^"]+)"/gi)
       for (const [, , candidate] of jsonUrls) {
         const url = candidate.replace(/\\u002F/g, '/')
         if (/\.(mp3|m4a|wav)$/i.test(url)) {
           log(`Plaud resolved (json) → ${url}`)
-          return { audioUrl: url }
+          return { audioUrl: url, meetingDate }
         }
       }
+    } catch (error) {
+      log(`HTML parsing error: ${error}`)
     }
-  } catch (error) {
-    log(`Plaud resolution error: ${error}; using original URL`)
-    return { audioUrl: url }
   }
 
   log('Plaud resolution failed; using original URL')
-  return { audioUrl: url }
+  return { audioUrl: url, meetingDate }
 }
 
 function findAudioUrlInObject(obj: any): string | null {
@@ -224,4 +213,20 @@ function findAudioUrlInObject(obj: any): string | null {
     }
   }
   return null
+}
+
+function normalizePlaudShareHtmlUrl(rawUrl: string): string {
+  try {
+    const parsed = new URL(rawUrl)
+
+    if (parsed.hostname.endsWith('plaud.ai') && parsed.hostname !== 'web.plaud.ai') {
+      // Share links often use share.plaud.ai which does not resolve in Node.
+      parsed.hostname = 'web.plaud.ai'
+    }
+
+    return parsed.toString()
+  } catch {
+    // Fallback in case URL parsing fails for some reason.
+    return rawUrl.replace(/^https?:\/\/share\.plaud\.ai/i, 'https://web.plaud.ai')
+  }
 }
