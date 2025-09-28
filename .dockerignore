@@ -1,0 +1,55 @@
+# Version control
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info
+dist
+build
+
+# Virtual environments
+.venv
+venv/
+ENV/
+env/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Reflex
+.web
+.states
+rxconfig.json
+
+# Local data
+data/
+*.db
+*.sqlite
+
+# Environment files (will be set in deployment)
+.env
+.env.*
+
+# Documentation
+doc/
+*.md
+
+# Development files
+.devcontainer/
+docker-compose.yml
+Caddyfile
+
+# OS files
+.DS_Store
+Thumbs.db

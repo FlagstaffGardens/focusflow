@@ -34,6 +34,16 @@ reflex run --env dev
 
 Open http://localhost:3000
 
+### Docker / Compose
+
+```bash
+docker compose build
+docker compose up
+# App exposed on http://localhost:8080
+```
+
+See `doc/deploy.md` for production deployment and Dokploy notes.
+
 ## Usage
 
 1. **Paste URL** - Plaud share link or direct audio URL

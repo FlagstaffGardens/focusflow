@@ -1344,7 +1344,7 @@ def _job_card(j: dict) -> rx.Component:
                 # Title or URL with proper contrast
                 rx.text(
                     rx.cond(
-                        j.get("title", ""),
+                        j["title"],
                         j["title"],
                         j["url"]
                     ),
@@ -1358,8 +1358,8 @@ def _job_card(j: dict) -> rx.Component:
                 ),
                 rx.flex(
                     rx.cond(
-                        j.get("meeting_date", ""),
-                        rx.text("📅 ", j.get("meeting_date", ""), style={"color": "#60a5fa"}, size="2"),  # Light blue
+                        j["meeting_date"],
+                        rx.text("📅 ", j["meeting_date"], style={"color": "#60a5fa"}, size="2"),  # Light blue
                         rx.text(j["created_label"], style={"color": "#9ca3af"}, size="1")  # Light gray
                     ),
                     rx.badge(j["status"], color_scheme=_status_color(j["status"]), variant="soft"),
