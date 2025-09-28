@@ -2,41 +2,43 @@
 
 ## Prerequisites
 
-- Docker and Docker Compose v2 (`docker compose` CLI)
-- Populate `.env` with production secrets (see `README.md`)
+- Docker 24+
+- Optional: Dokploy instance for managed deployment
+- `.env` populated with runtime secrets (see `.env.example`)
 
-## Build & Run Locally
+## Local Docker Run
 
 ```bash
 docker compose build
-docker compose up
-# App now available on http://localhost:8080
+docker compose up -d
 ```
 
-The stack mounts a named volume `focusflow-data` at `/data`, preserving:
+The compose file exposes `http://localhost:8080` and mounts:
 
-- `jobs.json`
-- cached audio files under `/data/files`
-- SQLite database (`sqlite:////data/app.db`)
+- `focusflow-data` → `/data` (jobs, audio files, transcripts, summaries)
+- `./prompts` → `/app/prompts` (read-only prompt overrides)
 
-Restarting containers keeps past jobs/transcripts intact.
+Stop with `docker compose down` (the volume keeps prior jobs).
 
 ## Dokploy Deployment
 
-1. In Dokploy, create a new application using the **Docker Compose** template.
-2. Upload `docker-compose.yml` from the repo or reference the Git repository directly.
-3. Add the same environment variables defined in `.env` (SECRET_KEY, API keys, etc.).
-4. Create a persistent volume in Dokploy and map it to `/data` for the `focusflow` service.
-5. Expose port 8080 (or map via Dokploy ingress) to access the UI.
-6. Deploy. Review logs, then run a smoke job to verify transcription + summary.
+1. **Create application** – choose *Docker* (build from repo) or *Docker Compose* and point to `docker-compose.yml`.
+2. **Environment variables** – set at least:
+   - `OPENAI_API_KEY`
+   - Optional `ASSEMBLYAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL`, `DATA_DIR=/data`
+3. **Volumes** – attach a persistent volume to `/data`. Optionally attach a config volume to `/app/prompts` for prompt overrides.
+4. **Ports** – expose container port `8080` (Dokploy ingress/HTTPS as needed).
+5. **Deploy** – Dokploy will run `pnpm -r build` inside the image and start `node server.js`.
+6. **Smoke test** – submit a Plaud share link and confirm the date, audio download, and summary all complete.
 
-## Smoke Test
+## Updating
 
-After deployment:
+- Rebuild the image (Dokploy redeploy) after code changes.
+- Prompt tweaks only: update the mounted prompts volume and restart the container (no rebuild required).
+- To clear state, stop the container and remove the `/data` volume.
 
-1. Upload a short Plaud.ai share link or sample audio URL.
-2. Wait for the job to complete.
-3. Verify summary renders correctly and data persists after restarting the container.
+## Troubleshooting
 
-For changes to summarization/transcription logic, follow the smoke script in
-`doc/ai_endpoints.md` before re-deploying.
+- `TypeError: fetch failed` – ensure outbound HTTPS is allowed from the container and that Plaud domains resolve (the resolver now rewrites to `web.plaud.ai`).
+- Missing summaries – verify `OPENAI_API_KEY` and, if using a proxy, `OPENAI_BASE_URL`.
+- No transcription – add `ASSEMBLYAI_API_KEY` or expect the pipeline to skip transcription with a log message.

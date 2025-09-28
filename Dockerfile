@@ -1,78 +1,44 @@
-# Stage 1: Build frontend
-FROM python:3.11-slim as frontend-builder
+# syntax=docker/dockerfile:1.6
 
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1
-
-# Install system dependencies
-RUN apt-get update -y && apt-get install -y --no-install-recommends \
-        curl \
-        gcc \
-        python3-dev \
-        unzip \
-    && rm -rf /var/lib/apt/lists/*
-
+# ---------- Base image with pnpm ----------
+FROM node:20-alpine AS base
+RUN apk add --no-cache libc6-compat \
+  && corepack enable \
+  && corepack prepare pnpm@10.17.1 --activate
 WORKDIR /app
 
-# Copy and install Python dependencies
-COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+# ---------- Install dependencies ----------
+FROM base AS deps
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY apps/web/package.json apps/web/
+COPY packages/pipeline/package.json packages/pipeline/
+RUN pnpm install --frozen-lockfile
 
-# Copy application code
+# ---------- Build workspace ----------
+FROM deps AS build
 COPY . .
+RUN pnpm -r build
 
-# Initialize Reflex and export frontend
-RUN reflex init
-RUN reflex export --frontend-only --no-zip
-
-# Stage 2: Runtime with Caddy reverse proxy
-FROM python:3.11-slim
-
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1
-
-# Install system dependencies including Caddy
-RUN apt-get update -y && apt-get install -y --no-install-recommends \
-        curl \
-        gcc \
-        python3-dev \
-        unzip \
-        gnupg \
-        debian-keyring \
-        debian-archive-keyring \
-        apt-transport-https \
-    && curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg \
-    && curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list \
-    && apt-get update -y \
-    && apt-get install -y caddy \
-    && rm -rf /var/lib/apt/lists/*
-
+# ---------- Production runtime ----------
+FROM node:20-alpine AS runner
+RUN apk add --no-cache libc6-compat curl
 WORKDIR /app
 
-# Copy Python dependencies and install
-COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+ENV NODE_ENV=production
+ENV PORT=8080
+ENV DATA_DIR=/data
 
-# Copy application code
-COPY . .
+COPY --from=build /app/apps/web/.next/standalone ./
+COPY --from=build /app/apps/web/.next/static ./apps/web/.next/static
+COPY --from=build /app/apps/web/public ./apps/web/public
+COPY --from=build /app/prompts ./prompts
 
-# Copy built frontend from stage 1
-COPY --from=frontend-builder /app/.web/build/client /var/www/html
+RUN mkdir -p /data && chown -R node:node /data && chown -R node:node /app
 
-# Initialize Reflex for backend
-RUN reflex init
-
-# Create data directory for persistence
-RUN mkdir -p /data
-
-# Copy Caddyfile
-COPY Caddyfile /etc/caddy/Caddyfile
-
-# Create startup script
-COPY start.sh /start.sh
-RUN chmod +x /start.sh
-
+USER node
 EXPOSE 8080
 
-# Run both Caddy and Reflex backend
-CMD ["/start.sh"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD curl -fsS http://127.0.0.1:${PORT:-8080}/api/health || exit 1
+
+CMD ["node", "server.js"]

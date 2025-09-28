@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { Suspense, useState, useEffect, useCallback, useMemo } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -33,7 +33,19 @@ interface EnvStatus {
   openai: boolean
 }
 
-export default function Home() {
+export default function Page() {
+  return (
+    <Suspense fallback={
+      <div className="flex h-screen items-center justify-center text-sm text-gray-500">
+        Loading meeting…
+      </div>
+    }>
+      <HomeContent />
+    </Suspense>
+  )
+}
+
+function HomeContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [jobs, setJobs] = useState<Job[]>([])

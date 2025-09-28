@@ -1,79 +1,92 @@
 # FocusFlow
 
-A streamlined web app for transcribing and summarizing meeting recordings from Plaud.ai or any audio URL.
+FocusFlow ingests Plaud.ai share links or direct audio URLs, downloads the audio, runs transcription, and generates meeting summaries with GPT. The current stack is Next.js 15 (App Router) with a shared TypeScript pipeline library.
 
 ## Features
 
-- 🎙️ **Audio Transcription** - Upload Plaud.ai links or direct audio URLs
-- 🤖 **AI Summarization** - Structured summaries with action items and decisions
-- 🏷️ **Smart Titles** - AI-generated concise titles for each meeting
-- 📅 **Date Extraction** - Automatically pulls meeting dates from Plaud URLs
-- 👥 **Speaker Diarization** - Identifies different speakers in transcripts
-- 📱 **Mobile Responsive** - Works on all devices
-- ⚡ **Real-time Updates** - Live progress tracking
+- 🎙️ Plaud.ai link resolution with automatic meeting-date extraction
+- 📼 Local audio download and optional AssemblyAI transcription
+- 🧠 GPT summaries + auto-generated meeting titles
+- 📋 Real-time job logs and progress
+- 📱 Responsive UI designed for desktop + mobile
 
-## Quick Start
+## Local Development
 
 ```bash
-# Clone and setup
-git clone <repo-url>
-cd focusflow
-python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-
-# Configure API keys
-cp .env.example .env
-# Edit .env with your keys:
-# - ASSEMBLYAI_API_KEY (required for transcription)
-# - OPENAI_API_KEY & OPENAI_BASE_URL (required for summarization)
-
-# Run
-reflex run --env dev
+pnpm install
+pnpm dev          # runs Next.js dev server on http://localhost:3000
 ```
 
-Open http://localhost:3000
+Environment variables:
 
-### Docker / Compose
+- `OPENAI_API_KEY` *(required for summaries)*
+- `OPENAI_BASE_URL` *(optional, defaults to https://api.openai.com)*
+- `OPENAI_MODEL` *(optional, defaults to gpt-4)*
+- `ASSEMBLYAI_API_KEY` *(optional, enables transcription)*
+- `DATA_DIR` *(optional, defaults to ./data)*
+
+Copy `.env.example` to `.env` and populate the keys before running `pnpm dev`.
+
+## Production Build
+
+```bash
+pnpm -r build     # builds the pipeline package + Next.js app
+```
+
+This generates the standalone server under `apps/web/.next/standalone` which the Docker image uses at runtime.
+
+## Docker / Dokploy
+
+The repository ships with a multi-stage `Dockerfile` and `docker-compose.yml` that:
+
+- Builds the monorepo with pnpm
+- Runs the standalone Next.js server on port `8080`
+- Mounts `/data` for persistent jobs, transcripts, and downloaded audio
+- Mounts `/app/prompts` read-only so prompt tweaks do not require rebuilding
+
+### Quick test
 
 ```bash
 docker compose build
 docker compose up
-# App exposed on http://localhost:8080
 ```
 
-See `doc/deploy.md` for production deployment and Dokploy notes.
+Visit http://localhost:8080 to add a Plaud link. Jobs and files will persist under `data/` between restarts.
 
-## Usage
+### Dokploy checklist
 
-1. **Paste URL** - Plaud share link or direct audio URL
-2. **Add Job** - Click to start processing
-3. **View Results** - Click job card to see transcript & summary
-4. **Re-summarize** - Generate new summary with updated prompt
+1. Create an app using the repository or Dockerfile.
+2. Set environment variables (`OPENAI_API_KEY`, optional `ASSEMBLYAI_API_KEY`, etc.).
+3. Attach a volume to `/data` for persisted jobs/files. (Optional: mount `/app/prompts` to override prompts.)
+4. Expose port `8080` (or configure Dokploy ingress).
+5. Deploy and run a smoke job to confirm end-to-end processing.
 
-## Project Structure
+## Project Layout
 
 ```
-main/main.py          # Entire app (UI + backend)
+apps/
+  web/                 # Next.js app (UI + API routes/queue)
+packages/
+  pipeline/            # Shared TypeScript pipeline logic (Plaud resolver, downloads, AI clients)
 prompts/
-  meeting_summary.md  # Summary prompt template
-  title_generator.md  # Title extraction prompt
-data/
-  jobs.json          # Persisted jobs
-  files/             # Cached audio files
+  meeting_summary.md   # Summary template
+  title_generator.md   # Title template
 ```
 
-## Customization
+## Customising Prompts
 
-- **Summary Format**: Edit `prompts/meeting_summary.md`
-- **Title Style**: Edit `prompts/title_generator.md`
-- **UI/Logic**: Edit `main/main.py`
+Edit the files in `prompts/` locally. In Docker/Dokploy deployments mount an override directory to `/app/prompts` to change prompts without rebuilding.
 
-Changes to prompts take effect immediately without restart.
+## Scripts
 
-## Tech Stack
+- `pnpm dev` – run the Next.js dev server
+- `pnpm -r build` – build both the pipeline package and the Next.js app
+- `pnpm --filter @focusflow/web start` – start the production server (expects prior build)
+- `pnpm --filter @focusflow/web type-check` – TypeScript check for the app
 
-- **Framework**: Reflex 0.8.12+ (Python)
-- **Transcription**: AssemblyAI (speaker labels, sentiment)
-- **Summarization**: OpenAI GPT-4
-- **Audio**: Plaud.ai resolver + direct URL support
+## Smoke Test
+
+1. Paste a Plaud share URL (`https://web.plaud.ai/share/...`).
+2. Verify the job resolves the correct meeting date and downloads audio.
+3. Check the summary and title once GPT finishes.
+4. Restart the app – the job should still appear thanks to the persisted `/data` volume.
