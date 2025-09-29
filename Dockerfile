@@ -18,6 +18,7 @@ RUN pnpm build
 FROM base AS runner
 ENV NODE_ENV=production
 ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV DATA_DIR=/app/data
 RUN useradd --create-home --uid 1001 focusflow
