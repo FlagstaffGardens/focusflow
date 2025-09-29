@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    ports:
+    expose:
       - "${PORT:-3000}"
     environment:
       - PORT=3000
@@ -21,7 +21,20 @@ services:
       timeout: 5s
       retries: 3
       start_period: 15s
+    networks:
+      - dokploy-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.focusflow.rule=Host(`focusflow-3wzejs-db1293-152-53-52-156.traefik.me`)"
+      - "traefik.http.routers.focusflow.entrypoints=websecure"
+      - "traefik.http.routers.focusflow.tls=true"
+      - "traefik.http.routers.focusflow.tls.certResolver=letsencrypt"
+      - "traefik.http.services.focusflow.loadbalancer.server.port=3000"
 
 volumes:
   focusflow-data:
     driver: local
+
+networks:
+  dokploy-network:
+    external: true
