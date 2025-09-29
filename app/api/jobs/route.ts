@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getJobQueue } from '@/lib/queue'
+import { enforceRateLimit } from '@/lib/server/security'
 import { z } from 'zod'
 
 const CreateJobSchema = z.object({
@@ -8,10 +9,13 @@ const CreateJobSchema = z.object({
 })
 
 // GET /api/jobs - List all jobs
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const limited = enforceRateLimit(request)
+  if (limited) return limited
+
   try {
     const queue = getJobQueue()
-    const jobs = queue.getStore().getJobs()
+    const jobs = await queue.getStore().getJobs()
 
     return NextResponse.json({ jobs })
   } catch (error) {
@@ -25,6 +29,9 @@ export async function GET() {
 
 // POST /api/jobs - Create new job
 export async function POST(request: NextRequest) {
+  const limited = enforceRateLimit(request)
+  if (limited) return limited
+
   try {
     const body = await request.json()
     const validated = CreateJobSchema.parse(body)

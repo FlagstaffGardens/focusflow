@@ -1,20 +1,24 @@
 import { NextResponse } from 'next/server'
-import { readFileSync, existsSync } from 'fs'
+import { promises as fs } from 'fs'
 import path from 'path'
 import { getJobQueue } from '@/lib/queue'
+import { enforceRateLimit } from '@/lib/server/security'
 import type { NextRequest } from 'next/server'
 
 type RouteParams = { id: string }
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<RouteParams> }
 ) {
+  const limited = enforceRateLimit(request)
+  if (limited) return limited
+
   const { id: jobId } = await params
 
   try {
     const queue = getJobQueue()
-    const job = queue.getStore().getJob(jobId)
+    const job = await queue.getStore().getJob(jobId)
 
     if (!job) {
       return NextResponse.json({ error: 'Job not found' }, { status: 404 })
@@ -28,11 +32,14 @@ export async function GET(
     const transcriptPath = path.isAbsolute(job.transcript_path)
       ? job.transcript_path
       : path.join(process.cwd(), job.transcript_path)
-    if (!existsSync(transcriptPath)) {
+
+    try {
+      await fs.access(transcriptPath)
+    } catch {
       return NextResponse.json({ transcript: null })
     }
 
-    const transcript = readFileSync(transcriptPath, 'utf-8')
+    const transcript = await fs.readFile(transcriptPath, 'utf-8')
     return NextResponse.json({ transcript })
   } catch (error) {
     console.error('Failed to load transcript:', error)

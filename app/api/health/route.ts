@@ -1,7 +1,11 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
+import { enforceRateLimit } from '@/lib/server/security'
 
 // GET /api/health - Health check endpoint
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const limited = enforceRateLimit(request)
+  if (limited) return limited
+
   const health = {
     status: 'ok',
     timestamp: new Date().toISOString(),

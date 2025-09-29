@@ -1,10 +1,11 @@
+import path from 'path'
+import { promises as fs } from 'fs'
+
 import { JobStore, Job } from './storage/job-store'
 import { resolvePlaudAudioUrl } from './plaud/resolver'
 import { downloadAudioFile } from './utils/downloader'
 import { transcribeWithAssemblyAI } from './assemblyai/client'
 import { summarizeWithGPT, generateTitle, OpenAIConfig } from './openai/client'
-import { readFileSync, writeFileSync } from 'fs'
-import path from 'path'
 
 export interface JobQueueConfig {
   dataDir?: string
@@ -14,34 +15,29 @@ export interface JobQueueConfig {
 }
 
 /**
- * Simple in-process job queue
- * Following Option B from the spec for MVP simplicity
+ * Simple in-process job queue.
+ * Provides async storage operations and background job processing.
  */
 export class SimpleJobQueue {
   private processing = false
-  private store: JobStore
-  private config: JobQueueConfig
-  private currentJob: Job | null = null
-  private jobStartTime: number = 0
+  private readonly store: JobStore
+  private readonly config: JobQueueConfig
+  private currentJobId: string | null = null
+  private jobStartTime = 0
 
   constructor(config: JobQueueConfig = {}) {
     this.config = {
-      jobTimeout: 10 * 60 * 1000, // 10 minutes default
+      jobTimeout: 10 * 60 * 1000,
       ...config,
     }
     this.store = new JobStore(config.dataDir)
   }
 
-  /**
-   * Create and enqueue a new job
-   */
   async enqueue(url: string, meetingDate?: string): Promise<Job> {
-    const job = this.store.createJob(url, meetingDate)
+    const job = await this.store.createJob(url, meetingDate)
 
-    // Start processing if not already running
     if (!this.processing) {
       this.processing = true
-      // Run in background
       void this.process()
     }
 
@@ -49,132 +45,178 @@ export class SimpleJobQueue {
   }
 
   /**
-   * Process jobs from the queue
+   * Retry a failed job.
    */
+  async retryJob(jobId: string, fullRerun: boolean = false): Promise<void> {
+    const job = await this.store.getJob(jobId)
+    if (!job) throw new Error('Job not found')
+
+    const reset: Partial<Job> = {
+      status: 'queued',
+      error: undefined,
+      checkpoint: fullRerun ? undefined : job.checkpoint,
+      updated_at: Date.now(),
+    }
+
+    if (fullRerun) {
+      Object.assign(reset, {
+        resolved_url: undefined,
+        file_path: undefined,
+        transcript_path: undefined,
+        summary_path: undefined,
+        summary: undefined,
+        title: undefined,
+      })
+    }
+
+    await this.store.updateJob(jobId, reset)
+    await this.store.enqueue(jobId)
+
+    if (!this.processing) {
+      this.processing = true
+      void this.process()
+    }
+  }
+
+  /**
+   * Regenerate summary for a job (skips earlier stages).
+   */
+  async regenerateSummary(jobId: string): Promise<void> {
+    const job = await this.store.getJob(jobId)
+    if (!job || !job.transcript_path) {
+      throw new Error('Job not found or no transcript available')
+    }
+
+    await this.store.updateJob(jobId, {
+      status: 'queued',
+      error: undefined,
+      checkpoint: { step: 'summarize' },
+      summary_path: undefined,
+      summary: undefined,
+      title: undefined,
+    })
+
+    await this.store.enqueue(jobId)
+
+    if (!this.processing) {
+      this.processing = true
+      void this.process()
+    }
+  }
+
+  getStore(): JobStore {
+    return this.store
+  }
+
   private async process(): Promise<void> {
     while (true) {
+      const job = await this.store.getNextJob()
+      if (!job) break
+
+      this.currentJobId = job.id
+      this.jobStartTime = Date.now()
+
       try {
-        const job = this.store.getNextJob()
-        if (!job) break
-
-        this.currentJob = job
-        this.jobStartTime = Date.now()
-
-        // Check for timeout
-        if (this.isTimedOut()) {
-          this.store.moveToDeadLetter(job.id, 'Job timeout exceeded')
-          continue
-        }
-
-        // Process the job
         await this.runJob(job)
-
-        // Remove from queue after successful completion
-        this.store.dequeue(job.id)
+        await this.store.dequeue(job.id)
       } catch (error) {
+        // eslint-disable-next-line no-console
         console.error('Queue processing error:', error)
-        // Continue processing other jobs
       }
     }
 
     this.processing = false
-    this.currentJob = null
+    this.currentJobId = null
   }
 
-  /**
-   * Run a single job through the pipeline
-   */
-  private async runJob(job: Job): Promise<void> {
-    const log = (msg: string) => this.store.addLog(job.id, msg)
+  private async runJob(initialJob: Job): Promise<void> {
+    let job = initialJob
+    const log = async (msg: string) => {
+      await this.store.addLog(job.id, msg)
+    }
 
     try {
-      // Update status
-      this.store.updateJob(job.id, { status: 'resolving' })
+      await this.store.updateJob(job.id, { status: 'resolving' })
 
       // Step 1: Resolve Plaud URL
       if (!job.resolved_url || job.checkpoint?.step === 'resolve') {
-        const metadata = await resolvePlaudAudioUrl(job.url, log)
-        // Always update meeting_date if we found one
+        const metadata = await resolvePlaudAudioUrl(job.url, msg => void log(msg))
         const updates: Partial<Job> = {
           resolved_url: metadata.audioUrl,
-          checkpoint: { step: 'download' } as Job['checkpoint'],
+          checkpoint: { step: 'download' },
         }
         if (metadata.meetingDate) {
           updates.meeting_date = metadata.meetingDate
-          log(`Updated meeting date to: ${metadata.meetingDate}`)
+          await log(`Updated meeting date to: ${metadata.meetingDate}`)
         }
-        this.store.updateJob(job.id, updates)
-        job.resolved_url = metadata.audioUrl
-        if (metadata.meetingDate) {
-          job.meeting_date = metadata.meetingDate
-        }
+        job = (await this.store.updateJob(job.id, updates)) ?? job
       }
 
       this.checkTimeout()
 
       // Step 2: Download audio
-      this.store.updateJob(job.id, { status: 'downloading' })
+      await this.store.updateJob(job.id, { status: 'downloading' })
       if (!job.file_path || job.checkpoint?.step === 'download') {
         const outputPath = path.join(
           this.config.dataDir || 'data',
           'files',
-          `${job.id}.mp3`
+          `${job.id}.mp3`,
         )
         const filePath = await downloadAudioFile(
           job.resolved_url || job.url,
           outputPath,
-          log
+          msg => void log(msg),
         )
-        this.store.updateJob(job.id, {
-          file_path: filePath,
-          checkpoint: { step: 'transcribe' }
-        })
-        job.file_path = filePath
+        job =
+          (await this.store.updateJob(job.id, {
+            file_path: filePath,
+            checkpoint: { step: 'transcribe' },
+          })) ?? job
       }
 
       this.checkTimeout()
 
       // Step 3: Transcribe
-      this.store.updateJob(job.id, { status: 'transcribing' })
+      await this.store.updateJob(job.id, { status: 'transcribing' })
       if (!job.transcript_path || job.checkpoint?.step === 'transcribe') {
         if (this.config.assemblyAiApiKey && job.file_path) {
           const result = await transcribeWithAssemblyAI(
             job.file_path,
             this.config.assemblyAiApiKey,
-            log
+            msg => void log(msg),
           )
 
           if (result) {
             const transcriptPath = path.join(
               this.config.dataDir || 'data',
               'transcripts',
-              `${job.id}.txt`
+              `${job.id}.txt`,
             )
-            writeFileSync(transcriptPath, result.text)
-            this.store.updateJob(job.id, {
-              transcript_path: transcriptPath,
-              checkpoint: { step: 'summarize' }
-            })
-            job.transcript_path = transcriptPath
+            await fs.writeFile(transcriptPath, result.text, 'utf-8')
+            job =
+              (await this.store.updateJob(job.id, {
+                transcript_path: transcriptPath,
+                checkpoint: { step: 'summarize' },
+              })) ?? job
           }
         } else {
-          log('Transcription skipped (no API key)')
+          await log('Transcription skipped (no API key)')
         }
       }
 
       this.checkTimeout()
 
       // Step 4: Summarize
-      this.store.updateJob(job.id, { status: 'summarizing' })
+      await this.store.updateJob(job.id, { status: 'summarizing' })
       if (this.config.openAiConfig && job.transcript_path) {
-        const transcript = readFileSync(job.transcript_path, 'utf-8')
+        const transcript = await fs.readFile(job.transcript_path, 'utf-8')
 
         let summary = ''
         const generator = summarizeWithGPT(
           transcript,
           job.meeting_date || new Date().toISOString().split('T')[0],
           this.config.openAiConfig,
-          log
+          msg => void log(msg),
         )
 
         for await (const chunk of generator) {
@@ -185,49 +227,48 @@ export class SimpleJobQueue {
           const summaryPath = path.join(
             this.config.dataDir || 'data',
             'summaries',
-            `${job.id}.md`
+            `${job.id}.md`,
           )
-          writeFileSync(summaryPath, summary)
+          await fs.writeFile(summaryPath, summary, 'utf-8')
 
-          // Generate title
-          const title = await generateTitle(summary, this.config.openAiConfig, log)
-
-          this.store.updateJob(job.id, {
-            summary_path: summaryPath,
+          const title = await generateTitle(
             summary,
-            title,
-            status: 'completed',
-            checkpoint: undefined,
-          })
+            this.config.openAiConfig,
+            msg => void log(msg),
+          )
+
+          job =
+            (await this.store.updateJob(job.id, {
+              summary_path: summaryPath,
+              summary,
+              title,
+              status: 'completed',
+              checkpoint: undefined,
+            })) ?? job
         }
       } else {
-        log('Summarization skipped (no API key or transcript)')
-        this.store.updateJob(job.id, {
+        await log('Summarization skipped (no API key or transcript)')
+        await this.store.updateJob(job.id, {
           status: 'completed',
           checkpoint: undefined,
         })
       }
-
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
-      log(`Error: ${errorMsg}`)
+      await log(`Error: ${errorMsg}`)
 
-      // Check if we should move to dead letter
-      const retryCount = this.getRetryCount(job.id)
+      const retryCount = await this.getRetryCount(job.id)
       if (retryCount >= 3) {
-        this.store.moveToDeadLetter(job.id, errorMsg)
+        await this.store.moveToDeadLetter(job.id, errorMsg)
       } else {
-        this.store.updateJob(job.id, {
+        await this.store.updateJob(job.id, {
           status: 'error',
-          error: errorMsg
+          error: errorMsg,
         })
       }
     }
   }
 
-  /**
-   * Check if current job has timed out
-   */
   private checkTimeout(): void {
     if (this.isTimedOut()) {
       throw new Error('Job timeout exceeded')
@@ -235,81 +276,15 @@ export class SimpleJobQueue {
   }
 
   private isTimedOut(): boolean {
-    if (!this.currentJob || !this.jobStartTime) return false
-    return Date.now() - this.jobStartTime > (this.config.jobTimeout || 600000)
+    if (!this.currentJobId || !this.jobStartTime || !this.config.jobTimeout) {
+      return false
+    }
+    return Date.now() - this.jobStartTime > this.config.jobTimeout
   }
 
-  private getRetryCount(jobId: string): number {
-    // Simple retry count based on error logs
-    const job = this.store.getJob(jobId)
+  private async getRetryCount(jobId: string): Promise<number> {
+    const job = await this.store.getJob(jobId)
     if (!job) return 0
-    return job.logs.filter(log => log.includes('Error:')).length
-  }
-
-  /**
-   * Retry a failed job
-   */
-  async retryJob(jobId: string, fullRerun: boolean = false): Promise<void> {
-    const job = this.store.getJob(jobId)
-    if (!job) throw new Error('Job not found')
-
-    // Reset status and error
-    this.store.updateJob(jobId, {
-      status: 'queued',
-      error: undefined,
-      checkpoint: fullRerun ? undefined : job.checkpoint,
-    })
-
-    // Clear artifacts if full rerun
-    if (fullRerun) {
-      this.store.updateJob(jobId, {
-        resolved_url: undefined,
-        file_path: undefined,
-        transcript_path: undefined,
-        summary_path: undefined,
-        title: undefined,
-      })
-    }
-
-    // Re-enqueue
-    this.store.enqueue(jobId)
-
-    if (!this.processing) {
-      this.processing = true
-      void this.process()
-    }
-  }
-
-  /**
-   * Regenerate summary only
-   */
-  async regenerateSummary(jobId: string): Promise<void> {
-    const job = this.store.getJob(jobId)
-    if (!job || !job.transcript_path) {
-      throw new Error('Job not found or no transcript available')
-    }
-
-    // Update checkpoint to skip earlier steps
-    this.store.updateJob(jobId, {
-      status: 'queued',
-      error: undefined,
-      checkpoint: { step: 'summarize' },
-      summary_path: undefined,
-      title: undefined,
-    })
-
-    this.store.enqueue(jobId)
-
-    if (!this.processing) {
-      this.processing = true
-      void this.process()
-    }
-  }
-
-  /**
-   * Get job store for direct access
-   */
-  getStore(): JobStore {
-    return this.store
+    return job.logs?.filter(log => log.includes('Error:')).length ?? 0
   }
 }

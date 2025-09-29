@@ -1,6 +1,6 @@
 import { fetch } from 'undici'
 import { LogFunction } from '../plaud/resolver'
-import { readFileSync } from 'fs'
+import { promises as fs } from 'fs'
 import path from 'path'
 
 export interface OpenAIConfig {
@@ -28,7 +28,7 @@ export async function* summarizeWithGPT(
   }
 
   // Load and render prompt template
-  const promptTemplate = loadPromptTemplate()
+  const promptTemplate = await loadPromptTemplate()
   const renderedPrompt = promptTemplate
     .replace('{{transcript}}', transcript)
     .replace('{{meeting_date}}', meetingDate)
@@ -123,11 +123,11 @@ export async function* summarizeWithGPT(
   return fullText
 }
 
-function loadPromptTemplate(): string {
+async function loadPromptTemplate(): Promise<string> {
   try {
     const promptPath = process.env.PROMPT_PATH || 'prompts/meeting_summary.md'
     const absolutePath = path.resolve(process.cwd(), promptPath)
-    return readFileSync(absolutePath, 'utf-8')
+    return await fs.readFile(absolutePath, 'utf-8')
   } catch (error) {
     console.error('Failed to load prompt template:', error)
     return `# Meeting Summary Request
@@ -164,11 +164,12 @@ export async function generateTitle(
 
   try {
     // Load title generator prompt
-    const promptPath = process.env.PROMPT_PATH?.replace('meeting_summary.md', 'title_generator.md')
-      || path.resolve(process.cwd(), 'prompts/title_generator.md')
+    const promptPath =
+      process.env.PROMPT_PATH?.replace('meeting_summary.md', 'title_generator.md') ||
+      path.resolve(process.cwd(), 'prompts/title_generator.md')
     let titlePrompt = ''
     try {
-      titlePrompt = readFileSync(promptPath, 'utf-8')
+      titlePrompt = await fs.readFile(promptPath, 'utf-8')
     } catch {
       log(`Failed to load title prompt, using default`)
       titlePrompt = `Generate a concise, descriptive title for this meeting.
