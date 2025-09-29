@@ -42,8 +42,7 @@ You can run FocusFlow end-to-end with Docker:
 1. Ensure your root `.env` has the required secrets (`OPENAI_API_KEY`, etc.). This same file is loaded by Docker Compose.
 2. (Optional) set `HOST_PORT` to control the host binding (defaults to 3000; set to `0` when a reverse proxy like Dokploy/Traefik should grab an available port automatically).
 3. Build and start the stack: `docker compose up --build`.
-4. The default compose file joins the external `gateway` network so Dokploy/Traefik can reach the container. If you run standalone, either remove that network stanza or create it with `docker network create gateway`.
-5. The UI is available at http://localhost:${HOST_PORT:-3000}. Job data, transcripts, and summaries persist in the named volume `focusflow-data`.
+4. The UI is available at http://localhost:${HOST_PORT:-3000}. Job data, transcripts, and summaries persist in the named volume `focusflow-data`.
 
 The compose file mounts `./prompts` read-only so you can tweak prompt templates without rebuilding, and it exposes `/app/data` through the named volume to preserve queue state across restarts.
 
