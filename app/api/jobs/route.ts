@@ -3,6 +3,8 @@ import { getJobQueue } from '@/lib/queue'
 import { enforceRateLimit } from '@/lib/server/security'
 import { z } from 'zod'
 
+export const runtime = 'nodejs'
+
 const CreateJobSchema = z.object({
   url: z.string().url(),
   meetingDate: z.string().optional(),

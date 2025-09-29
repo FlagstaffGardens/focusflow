@@ -6,6 +6,8 @@ import { getJobQueue } from '@/lib/queue'
 import { enforceRateLimit } from '@/lib/server/security'
 import type { Job } from '@/lib/pipeline'
 
+export const runtime = 'nodejs'
+
 type RouteParams = { id: string }
 
 // GET /api/jobs/[id] - Get job details

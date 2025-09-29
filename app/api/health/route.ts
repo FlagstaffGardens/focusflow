@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { enforceRateLimit } from '@/lib/server/security'
 
+export const runtime = 'nodejs'
+
 // GET /api/health - Health check endpoint
 export async function GET(request: NextRequest) {
   const limited = enforceRateLimit(request)

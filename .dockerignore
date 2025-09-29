@@ -1,0 +1,28 @@
+# Node modules & build output
+node_modules
+.next
+out
+dist
+coverage
+
+# Local data/state
+data
+tmp-job-data
+
+# Environment & secrets
+.env
+.env.*
+!.env.example
+
+# Tests & dev tooling
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+tsconfig.tsbuildinfo
+*.log
+*.swp
+*.swo
+*~
+.git
+.gitignore

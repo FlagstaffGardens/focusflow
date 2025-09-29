@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getJobQueue } from '@/lib/queue'
 import { enforceRateLimit } from '@/lib/server/security'
 
+export const runtime = 'nodejs'
+
 // POST /api/jobs/[id]/retry - Retry failed job
 export async function POST(
   request: NextRequest,

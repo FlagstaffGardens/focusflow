@@ -4,9 +4,10 @@ FocusFlow ingests Plaud.ai share links or direct audio URLs, transcribes the aud
 
 ## Getting Started
 
-1. `pnpm install`
-2. Copy `.env.example` to `.env` and fill in the required keys.
-3. `pnpm dev` to launch the dev server at http://localhost:3000.
+1. Install Node.js 20 (see `.nvmrc`) and enable pnpm via corepack (`corepack enable`).
+2. `pnpm install`
+3. Copy `.env.example` to `.env` and fill in the required keys.
+4. `pnpm dev` to launch the dev server at http://localhost:3000.
 
 ## Environment Variables
 
@@ -34,12 +35,22 @@ OPENAI_MODEL=gpt-4
 PROMPT_PATH=prompts/meeting_summary.md
 ```
 
+## Docker Compose
+
+You can run FocusFlow end-to-end with Docker:
+
+1. Ensure your root `.env` has the required secrets (`OPENAI_API_KEY`, etc.). This same file is loaded by Docker Compose.
+2. Build and start the stack: `docker compose up --build`.
+3. The UI is available at http://localhost:3000. Job data, transcripts, and summaries persist in the named volume `focusflow-data`.
+
+The compose file mounts `./prompts` read-only so you can tweak prompt templates without rebuilding, and it exposes `/app/data` through the named volume to preserve queue state across restarts.
+
 ## Production Build
 
 - `pnpm build` to create the optimized Next.js build.
 - `pnpm start` serves the built app (ensure `PORT` is set).
 
-Persist the directory referenced by `DATA_DIR` in your hosting environment so jobs, transcripts, and summaries survive restarts.
+Persist the directory referenced by `DATA_DIR` (or the `focusflow-data` volume under Docker) so jobs, transcripts, and summaries survive restarts.
 
 ## Scripts
 

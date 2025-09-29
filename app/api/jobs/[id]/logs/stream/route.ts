@@ -2,6 +2,8 @@ import { getJobQueue } from '@/lib/queue'
 import { enforceRateLimit } from '@/lib/server/security'
 import type { NextRequest } from 'next/server'
 
+export const runtime = 'nodejs'
+
 type RouteParams = { id: string }
 
 // GET /api/jobs/[id]/logs/stream - SSE stream of job logs
