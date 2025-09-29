@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useState, useEffect, useCallback, useMemo, type MouseEvent } from 'react'
+import { Suspense, useState, useEffect, useCallback, useMemo, Children, type MouseEvent } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -588,44 +588,45 @@ function HomeContent() {
         {selectedJob ? (
           <>
             {/* Header */}
-            <div className="p-4 border-b bg-white">
-              <div className="flex items-center justify-between mb-2">
-                <h2 className="text-xl font-semibold">
-                  {selectedJob.title || 'Meeting Details'}
-                </h2>
+            <div className="border-b bg-white px-6 py-5">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div className="space-y-2">
+                  <h2 className="text-xl font-semibold text-gray-900">
+                    {selectedJob.title || 'Meeting Details'}
+                  </h2>
+                  <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-gray-600">
+                    <span className={getStatusColor(selectedJob.status)}>
+                      Status: {selectedJob.status}
+                    </span>
+                    <span>{formatDate(selectedJob.meeting_date, selectedJob.created_at)}</span>
+                  </div>
+                  <p className="text-sm text-gray-500 break-all">
+                    {selectedJob.url}
+                  </p>
+                  {selectedJob.error && (
+                    <p className="text-sm text-red-600">
+                      Error: {selectedJob.error}
+                    </p>
+                  )}
+                </div>
+
                 {selectedJob.status === 'completed' && transcript && (
                   <button
                     onClick={() => resummarizeJob(selectedJob.id)}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-medium"
+                    className="inline-flex items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-blue-700"
                   >
                     🔄 Resummarize
                   </button>
                 )}
               </div>
-              <p className="text-sm text-gray-500 mt-1">
-                {selectedJob.url}
-              </p>
-              <div className="flex gap-4 mt-2 text-sm">
-                <span className={getStatusColor(selectedJob.status)}>
-                  Status: {selectedJob.status}
-                </span>
-                <span className="text-gray-500">
-                  {formatDate(selectedJob.meeting_date, selectedJob.created_at)}
-                </span>
-              </div>
-              {selectedJob.error && (
-                <p className="text-sm text-red-600 mt-2">
-                  Error: {selectedJob.error}
-                </p>
-              )}
             </div>
 
             {/* Content area */}
             <div className="flex-1 flex flex-col overflow-y-auto">
               {/* Transcript toggle */}
               {transcript && (
-                <div className="border-b bg-gray-50">
-                  <div className="flex items-center justify-between p-3">
+                <div className="border-b bg-gray-50/80">
+                  <div className="flex items-center justify-between px-6 py-3">
                     <Button
                       variant="ghost"
                       size="sm"
@@ -644,8 +645,8 @@ function HomeContent() {
                   </div>
 
                   {showTranscript && (
-                    <div className="border-t bg-white max-h-64 overflow-y-auto">
-                      <pre className="p-4 text-sm whitespace-pre-wrap font-sans">
+                    <div className="border-t bg-white max-h-72 overflow-y-auto">
+                      <pre className="px-6 py-4 text-sm whitespace-pre-wrap font-sans leading-relaxed">
                         {transcript}
                       </pre>
                     </div>
@@ -655,8 +656,10 @@ function HomeContent() {
 
               {/* Summary */}
               <div className="flex-1 flex flex-col min-h-0">
-                <div className="flex items-center justify-between p-3 border-b bg-gray-50">
-                  <h3 className="font-medium">Summary</h3>
+                <div className="flex items-center justify-between border-b bg-gray-50/80 px-6 py-3">
+                  <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-600">
+                    Summary
+                  </h3>
                   {selectedJob.summary && (
                     <Button
                       variant="ghost"
@@ -668,32 +671,25 @@ function HomeContent() {
                   )}
                 </div>
 
-                <ScrollArea className="flex-1 bg-white overflow-y-auto">
-                  <div className="p-6">
+                <ScrollArea className="flex-1 overflow-y-auto bg-gray-50">
+                  <div className="mx-auto w-full max-w-3xl space-y-8 px-6 py-10">
                     {selectedJob.summary ? (
-                      <div className="prose prose-sm prose-neutral max-w-none
-                        prose-headings:text-gray-900 prose-headings:font-semibold
-                        prose-h1:text-2xl prose-h1:mb-4 prose-h1:mt-6
-                        prose-h2:text-xl prose-h2:mb-3 prose-h2:mt-5
-                        prose-h3:text-lg prose-h3:mb-2 prose-h3:mt-4
-                        prose-p:text-gray-700 prose-p:leading-relaxed prose-p:mb-3
-                        prose-ul:my-3 prose-li:my-1 prose-li:marker:text-gray-500
-                        prose-strong:text-gray-900 prose-strong:font-semibold
-                        prose-code:text-pink-600 prose-code:bg-gray-100 prose-code:px-1 prose-code:rounded
-                        prose-pre:bg-gray-900 prose-pre:text-gray-100
-                        prose-blockquote:border-l-4 prose-blockquote:border-gray-300 prose-blockquote:pl-4 prose-blockquote:italic
-                        prose-table:w-full prose-th:text-left prose-th:font-semibold
-                        prose-td:p-2 prose-th:p-2 prose-th:border-b prose-th:border-gray-300">
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                          {selectedJob.summary}
-                        </ReactMarkdown>
+                      <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+                        <div className="space-y-6 p-8">
+                          <ReactMarkdown
+                            remarkPlugins={[remarkGfm]}
+                            components={summaryComponents}
+                          >
+                            {selectedJob.summary}
+                          </ReactMarkdown>
+                        </div>
                       </div>
                     ) : (
-                      <p className="text-gray-500">
+                      <div className="rounded-lg border border-dashed border-gray-300 bg-white px-6 py-12 text-center text-gray-500">
                         {selectedJob.status === 'completed'
-                          ? 'No summary available'
-                          : 'Summary will appear here when ready'}
-                      </p>
+                          ? 'No summary available for this job.'
+                          : 'Summary will appear here when processing finishes.'}
+                      </div>
                     )}
                   </div>
                 </ScrollArea>
@@ -712,3 +708,88 @@ function HomeContent() {
     </div>
   )
 }
+  const summaryComponents = useMemo(() => ({
+    h1: ({ node, ...props }: React.HTMLAttributes<HTMLHeadingElement>) => (
+      <h1 className="mt-10 text-2xl font-semibold leading-tight text-gray-900" {...props} />
+    ),
+    h2: ({ node, ...props }: React.HTMLAttributes<HTMLHeadingElement>) => (
+      <h2 className="mt-8 text-xl font-semibold leading-tight text-gray-900" {...props} />
+    ),
+    h3: ({ node, ...props }: React.HTMLAttributes<HTMLHeadingElement>) => (
+      <h3 className="mt-6 text-lg font-semibold leading-snug text-gray-900" {...props} />
+    ),
+    p: ({ node, children, ...props }: React.HTMLAttributes<HTMLParagraphElement>) => {
+      const childArray = Children.toArray(children)
+      if (childArray.length === 1 && typeof childArray[0] === 'string') {
+        const text = childArray[0].trim()
+        const labelMatch = text.match(/^([A-Za-z0-9()\-/\s]+):\s*(.*)$/)
+        const headingMatch = text.match(/^[A-Z][A-Za-z\s/()-]{1,40}$/)
+
+        if (labelMatch) {
+          const [, label, value] = labelMatch
+          return (
+            <div className="mb-4 flex flex-col gap-1 md:flex-row md:items-baseline md:gap-4">
+              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500 md:text-sm">
+                {label.trim()}
+              </span>
+              <span className="text-base leading-relaxed text-gray-800 md:text-lg md:leading-8">
+                {value?.length ? value : '—'}
+              </span>
+            </div>
+          )
+        }
+
+        if (headingMatch && text.length < 35) {
+          return (
+            <h4 className="mt-6 text-lg font-semibold uppercase tracking-wide text-gray-700" {...props}>
+              {text}
+            </h4>
+          )
+        }
+      }
+
+      return (
+        <p
+          className="mb-5 whitespace-pre-line text-base leading-relaxed text-gray-700 md:text-lg md:leading-8"
+          {...props}
+        >
+          {children}
+        </p>
+      )
+    },
+    strong: ({ node, ...props }: React.HTMLAttributes<HTMLElement>) => (
+      <strong className="font-semibold text-gray-900" {...props} />
+    ),
+    ul: ({ node, ...props }: React.HTMLAttributes<HTMLUListElement>) => (
+      <ul className="list-disc space-y-3 pl-6 text-base leading-relaxed text-gray-700 md:text-lg md:leading-8" {...props} />
+    ),
+    ol: ({ node, ...props }: React.HTMLAttributes<HTMLOListElement>) => (
+      <ol className="list-decimal space-y-3 pl-6 text-base leading-relaxed text-gray-700 md:text-lg md:leading-8" {...props} />
+    ),
+    li: ({ node, ...props }: React.HTMLAttributes<HTMLLIElement>) => (
+      <li className="leading-relaxed" {...props} />
+    ),
+    blockquote: ({ node, ...props }: React.HTMLAttributes<HTMLQuoteElement>) => (
+      <blockquote className="border-l-4 border-gray-300 pl-4 italic text-gray-600" {...props} />
+    ),
+    table: ({ node, ...props }: React.HTMLAttributes<HTMLTableElement>) => (
+      <table className="w-full text-sm text-gray-700" {...props} />
+    ),
+    th: ({ node, ...props }: React.HTMLAttributes<HTMLTableCellElement>) => (
+      <th className="border-b border-gray-200 px-3 py-2 text-left font-semibold" {...props} />
+    ),
+    td: ({ node, ...props }: React.HTMLAttributes<HTMLTableCellElement>) => (
+      <td className="border-b border-gray-100 px-3 py-2 align-top" {...props} />
+    ),
+    code: ({ node, inline, className, children, ...props }: React.HTMLAttributes<HTMLElement> & { inline?: boolean }) => (
+      inline ? (
+        <code className="rounded bg-gray-100 px-1 py-0.5 text-sm text-pink-600" {...props}>
+          {children}
+        </code>
+      ) : (
+        <code className="block rounded-lg bg-gray-900 p-4 text-sm text-gray-100" {...props}>
+          {children}
+        </code>
+      )
+    ),
+  }), [])
