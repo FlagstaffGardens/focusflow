@@ -1,12 +1,12 @@
-version: "3.9"
-
 services:
   focusflow:
     build: .
     env_file:
       - .env
+    expose:
+      - "3000"
     ports:
-      - "3000:3000"
+      - "${HOST_PORT:-3000}:3000"
     volumes:
       - focusflow-data:/app/data
       - ./prompts:/app/prompts:ro
