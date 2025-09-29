@@ -10,6 +10,8 @@ services:
     volumes:
       - focusflow-data:/app/data
       - ./prompts:/app/prompts:ro
+    networks:
+      - dokploy-gateway
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health',{cache:'no-store'}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
@@ -20,3 +22,8 @@ services:
 
 volumes:
   focusflow-data:
+
+networks:
+  dokploy-gateway:
+    external: true
+    name: gateway
