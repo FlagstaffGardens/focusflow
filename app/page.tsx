@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useState, useEffect, useCallback, useMemo, useRef, Children, type MouseEvent } from 'react'
+import { Suspense, useState, useEffect, useCallback, useMemo, Children, type MouseEvent } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -58,37 +58,9 @@ function HomeContent() {
   const [copiedSummary, setCopiedSummary] = useState(false)
   const isMobile = useMobile()
 
-  const initialJobId = searchParams.get('job')
-  const [selectedJobId, setSelectedJobId] = useState<string | null>(initialJobId)
-  const pendingNavRef = useRef<'push' | 'clear' | null>(null)
+  const [selectedJob, setSelectedJob] = useState<Job | null>(null)
 
-  useEffect(() => {
-    const paramJobId = searchParams.get('job')
-
-    if (pendingNavRef.current === 'push') {
-      if (paramJobId === selectedJobId) {
-        pendingNavRef.current = null
-      }
-      return
-    }
-
-    if (pendingNavRef.current === 'clear') {
-      if (paramJobId) {
-        return
-      }
-      pendingNavRef.current = null
-      return
-    }
-
-    if (paramJobId !== selectedJobId) {
-      setSelectedJobId(paramJobId)
-    }
-  }, [searchParams, selectedJobId])
-
-  const selectedJob = useMemo(() => {
-    if (!selectedJobId) return null
-    return jobs.find(job => job.id === selectedJobId) ?? null
-  }, [jobs, selectedJobId])
+  const selectedJobId = searchParams.get('job')
 
   const summaryComponents = useMemo(() => ({
     h1: (props: React.HTMLAttributes<HTMLHeadingElement>) => (
@@ -191,17 +163,15 @@ function HomeContent() {
       .catch(console.error)
   }, [])
 
-  // Fetch jobs
   const fetchJobs = useCallback(async () => {
     try {
       const response = await fetch('/api/jobs')
       const data = await response.json()
       const jobsList = data.jobs || []
-      // Sort jobs by meeting_date (newest first), fallback to created_at
       const sortedJobs = jobsList.sort((a: Job, b: Job) => {
         const dateA = a.meeting_date ? new Date(a.meeting_date).getTime() : a.created_at
         const dateB = b.meeting_date ? new Date(b.meeting_date).getTime() : b.created_at
-        return dateB - dateA // Newest first
+        return dateB - dateA
       })
       setJobs(sortedJobs)
     } catch (error) {
@@ -209,7 +179,20 @@ function HomeContent() {
     }
   }, [])
 
-  // Load transcript for selected job
+  useEffect(() => {
+    fetchJobs()
+    const interval = setInterval(fetchJobs, 5000)
+    return () => clearInterval(interval)
+  }, [fetchJobs])
+
+  useEffect(() => {
+    if (!selectedJobId) {
+      setSelectedJob(null)
+      return
+    }
+    setSelectedJob(prev => prev?.id === selectedJobId ? prev : jobs.find(job => job.id === selectedJobId) ?? prev ?? null)
+  }, [selectedJobId, jobs])
+
   const loadTranscript = useCallback(async (job: Job) => {
     if (!job.transcript_path) {
       setTranscript('')
@@ -227,63 +210,19 @@ function HomeContent() {
     }
   }, [])
 
-  // Handle job selection with URL update
   const selectJob = useCallback((job: Job | null) => {
     if (job) {
-      pendingNavRef.current = 'push'
-      setSelectedJobId(job.id)
+      loadTranscript(job)
       router.push(`/?job=${job.id}`)
     } else {
-      pendingNavRef.current = 'clear'
-      setSelectedJobId(null)
-      if (typeof window !== 'undefined' && window.history.length > 1) {
-        router.back()
-      } else {
-        router.replace('/', { scroll: false })
-      }
-    }
-  }, [router])
-
-  // Load job from URL on mount and when jobs change
-  useEffect(() => {
-    const jobId = searchParams.get('job')
-
-    if (jobId && jobs.some(job => job.id === jobId)) {
-      setSelectedJobId(prev => (prev === jobId ? prev : jobId))
-      return
-    }
-
-    if (!jobId) {
-      setSelectedJobId(null)
-      router.replace('/')
-      return
-    }
-
-    if (selectedJobId && !jobs.some(job => job.id === selectedJobId)) {
-      setSelectedJobId(null)
-    }
-  }, [searchParams, jobs, selectedJobId, router])
-
-  useEffect(() => {
-    fetchJobs()
-    const interval = setInterval(fetchJobs, 5000)
-    return () => clearInterval(interval)
-  }, [fetchJobs])
-
-  // Ensure URL state stays in sync with job list (e.g. deleted jobs)
-  useEffect(() => {
-    if (selectedJobId && !selectedJob) {
-      pendingNavRef.current = 'clear'
-      setSelectedJobId(null)
       router.replace('/', { scroll: false })
     }
-  }, [selectedJobId, selectedJob, router])
+  }, [router, loadTranscript])
 
-  // Load transcript when job is selected
   useEffect(() => {
     if (selectedJob) {
       loadTranscript(selectedJob)
-      setShowTranscript(false) // Reset transcript toggle when switching jobs
+      setShowTranscript(false)
     }
   }, [selectedJob, loadTranscript])
 
@@ -391,7 +330,6 @@ function HomeContent() {
   }
 
   const formatDate = (meetingDate: string | undefined, fallback?: number) => {
-    // Use meeting_date if available, otherwise use fallback (created_at)
     const dateToUse = meetingDate || (fallback ? new Date(fallback).toISOString() : null)
     if (!dateToUse) return 'Unknown date'
 
@@ -405,12 +343,10 @@ function HomeContent() {
     })
   }
 
-
-  // Mobile view - List of calls or single call detail
-  if (isMobile && selectedJob) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex flex-col">
-        {/* Mobile Header */}
+  if (isMobile) {
+    if (selectedJob) {
+      return (
+        <div className="min-h-screen bg-gray-50 flex flex-col">
         <div className="bg-white border-b sticky top-0 z-10">
           <div className="p-4">
             <div className="flex items-center gap-2 mb-2">
@@ -445,9 +381,7 @@ function HomeContent() {
           </div>
         </div>
 
-        {/* Mobile Content */}
         <div className="flex-1 overflow-y-auto">
-          {/* Actions */}
           {selectedJob.status === 'completed' && (
             <div className="p-4 bg-white border-b">
               <div className="flex gap-2">
@@ -475,7 +409,6 @@ function HomeContent() {
             </div>
           )}
 
-          {/* Transcript Section */}
           {transcript && (
             <div className="bg-white mb-2">
               <div className="p-4 border-b">
@@ -507,9 +440,8 @@ function HomeContent() {
             </div>
           )}
 
-          {/* Summary Section */}
           <div className="bg-white">
-            <div className="p-4 border-b flex items-center justify-between">
+            <div className="flex items-center justify-between px-4 py-3 border-b">
               <h3 className="font-medium">Summary</h3>
               {selectedJob.summary && (
                 <Button
@@ -521,22 +453,18 @@ function HomeContent() {
                 </Button>
               )}
             </div>
-            <div className="p-4">
+            <div className="px-4 pb-6">
               {selectedJob.summary ? (
-                <div className="prose prose-sm prose-neutral max-w-none
-                  prose-headings:text-gray-900 prose-headings:font-semibold
-                  prose-h1:text-xl prose-h1:mb-3
-                  prose-h2:text-lg prose-h2:mb-2
-                  prose-h3:text-base prose-h3:mb-2
-                  prose-p:text-gray-700 prose-p:leading-relaxed prose-p:mb-3
-                  prose-ul:my-2 prose-li:my-1
-                  prose-strong:text-gray-900 prose-strong:font-semibold">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                <div className="rounded-lg border border-gray-200 bg-white shadow-sm p-4">
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={summaryComponents}
+                  >
                     {selectedJob.summary}
                   </ReactMarkdown>
                 </div>
               ) : (
-                <p className="text-gray-500">
+                <p className="text-gray-500 text-sm">
                   {selectedJob.status === 'completed'
                     ? 'No summary available'
                     : 'Summary will appear here when ready'}
@@ -544,29 +472,16 @@ function HomeContent() {
               )}
             </div>
           </div>
-
-          {/* Error message */}
-          {selectedJob.error && (
-            <div className="p-4 bg-red-50 text-red-600 text-sm">
-              Error: {selectedJob.error}
-            </div>
-          )}
         </div>
       </div>
     )
-  }
+    }
 
-  // Mobile view - List of calls
-  if (isMobile) {
     return (
-      <div className="min-h-screen bg-gray-50 flex flex-col">
-        {/* Mobile Header */}
-        <div className="bg-white border-b sticky top-0 z-10">
-          <div className="p-4">
-            <h1 className="text-2xl font-bold mb-3">FocusFlow</h1>
-
-            {/* Create new job */}
-            <div className="flex gap-2">
+      <div className="min-h-screen bg-gray-50">
+        <div className="bg-white border-b">
+          <div className="p-4 space-y-4">
+            <div>
               <Input
                 type="url"
                 placeholder="Enter Plaud.ai share link"
@@ -574,19 +489,19 @@ function HomeContent() {
                 onChange={(e) => setUrl(e.target.value)}
                 onKeyPress={(e) => e.key === 'Enter' && createJob()}
                 disabled={loading}
-                className="flex-1"
+                className="w-full"
               />
               <Button
                 onClick={createJob}
                 disabled={loading || !url}
                 size="sm"
+                className="mt-2 w-full"
               >
-                {loading ? '...' : 'Add'}
+                {loading ? 'Processing…' : 'Add'}
               </Button>
             </div>
 
-            {/* Environment status */}
-            <div className="mt-2 flex gap-3 text-xs">
+            <div className="flex gap-3 text-xs">
               <span className={envStatus.assemblyai ? 'text-green-600' : 'text-red-600'}>
                 AssemblyAI {envStatus.assemblyai ? '✓' : '✗'}
               </span>
@@ -597,62 +512,40 @@ function HomeContent() {
           </div>
         </div>
 
-        {/* Jobs list */}
-        <div className="flex-1 overflow-y-auto p-4">
+        <div className="p-4 space-y-3">
           {jobs.length === 0 ? (
-            <div className="text-center text-gray-500 py-12">
-              <p className="text-lg mb-2">No calls yet</p>
-              <p className="text-sm">Add a Plaud.ai link to get started</p>
+            <div className="rounded-lg border border-dashed border-gray-300 bg-white px-6 py-12 text-center text-gray-500">
+              Add a Plaud.ai link to get started.
             </div>
           ) : (
-            <div className="space-y-3">
-              {jobs.map((job) => (
-                <Card
-                  key={job.id}
-                  className="p-4 cursor-pointer active:bg-gray-50"
-                  onClick={() => selectJob(job)}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium truncate">
-                        {job.title || 'Untitled Meeting'}
-                      </p>
-                      <p className="text-sm text-gray-500 mt-1">
-                        {formatDate(job.meeting_date, job.created_at)}
-                      </p>
-                      <p className={`text-sm mt-1 ${getStatusColor(job.status)}`}>
-                        {job.status}
-                      </p>
-                    </div>
-                    {job.status === 'error' && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={(e) => retryJob(job.id, e)}
-                        className="shrink-0"
-                      >
-                        Retry
-                      </Button>
-                    )}
-                  </div>
-                </Card>
-              ))}
-            </div>
+            jobs.map(job => (
+              <Card
+                key={job.id}
+                className="p-4 active:bg-gray-50"
+                onClick={() => selectJob(job)}
+              >
+                <p className="font-medium truncate">
+                  {job.title || 'Untitled Meeting'}
+                </p>
+                <p className="text-sm text-gray-500 mt-1">
+                  {formatDate(job.meeting_date, job.created_at)}
+                </p>
+                <p className={`text-sm mt-1 ${getStatusColor(job.status)}`}>
+                  {job.status}
+                </p>
+              </Card>
+            ))
           )}
         </div>
       </div>
     )
   }
 
-  // Desktop view (original layout)
   return (
     <div className="flex h-screen bg-gray-50">
-      {/* Left sidebar - Job list */}
       <div className="w-96 border-r bg-white flex flex-col">
         <div className="p-4 border-b">
           <h1 className="text-2xl font-bold mb-4">FocusFlow</h1>
-
-          {/* Create new job */}
           <div className="flex gap-2">
             <Input
               type="url"
@@ -671,7 +564,6 @@ function HomeContent() {
             </Button>
           </div>
 
-          {/* Environment status */}
           <div className="mt-3 flex gap-4 text-xs">
             <span className={envStatus.assemblyai ? 'text-green-600' : 'text-red-600'}>
               AssemblyAI {envStatus.assemblyai ? '✓' : '✗'}
@@ -682,7 +574,6 @@ function HomeContent() {
           </div>
         </div>
 
-        {/* Jobs list */}
         <ScrollArea className="flex-1">
           <div className="p-2">
             {jobs.length === 0 ? (
@@ -726,11 +617,9 @@ function HomeContent() {
         </ScrollArea>
       </div>
 
-      {/* Right side - Job details */}
       <div className="flex-1 flex flex-col">
         {selectedJob ? (
           <>
-            {/* Header */}
             <div className="border-b bg-white px-6 py-5">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div className="space-y-2">
@@ -764,9 +653,7 @@ function HomeContent() {
               </div>
             </div>
 
-            {/* Content area */}
             <div className="flex-1 flex flex-col overflow-y-auto">
-              {/* Transcript toggle */}
               {transcript && (
                 <div className="border-b bg-gray-50/80">
                   <div className="flex items-center justify-between px-6 py-3">
@@ -797,7 +684,6 @@ function HomeContent() {
                 </div>
               )}
 
-              {/* Summary */}
               <div className="flex-1 flex flex-col min-h-0">
                 <div className="flex items-center justify-between border-b bg-gray-50/80 px-6 py-3">
                   <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-600">
