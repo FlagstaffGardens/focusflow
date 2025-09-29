@@ -4,7 +4,7 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "${WEB_PORT:-3000}:3000"
+      - "${WEB_PORT:-3001}:3000"
     environment:
       - PORT=3000
       - DATA_DIR=/data
