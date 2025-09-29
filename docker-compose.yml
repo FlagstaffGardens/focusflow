@@ -4,7 +4,7 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "3000:3000"
+      - "${WEB_PORT:-3000}:3000"
     environment:
       - PORT=3000
       - DATA_DIR=/data
@@ -15,19 +15,7 @@ services:
     volumes:
       - focusflow-data:/data
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 15s
-    networks:
-      - dokploy-network
 
 volumes:
   focusflow-data:
     driver: local
-
-networks:
-  dokploy-network:
-    external: true
