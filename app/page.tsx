@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useState, useEffect, useCallback, useMemo, Children, type MouseEvent } from 'react'
+import { Suspense, useState, useEffect, useCallback, useMemo, useRef, Children, type MouseEvent } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -49,7 +49,6 @@ function HomeContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [jobs, setJobs] = useState<Job[]>([])
-  const [selectedJobId, setSelectedJobId] = useState<string | null>(null)
   const [url, setUrl] = useState('')
   const [loading, setLoading] = useState(false)
   const [envStatus, setEnvStatus] = useState<EnvStatus>({ assemblyai: false, openai: false })
@@ -59,10 +58,123 @@ function HomeContent() {
   const [copiedSummary, setCopiedSummary] = useState(false)
   const isMobile = useMobile()
 
+  const initialJobId = searchParams.get('job')
+  const [selectedJobId, setSelectedJobId] = useState<string | null>(initialJobId)
+  const pendingNavRef = useRef<'push' | 'clear' | null>(null)
+
+  useEffect(() => {
+    const paramJobId = searchParams.get('job')
+
+    if (pendingNavRef.current === 'push') {
+      if (paramJobId === selectedJobId) {
+        pendingNavRef.current = null
+      }
+      return
+    }
+
+    if (pendingNavRef.current === 'clear') {
+      if (paramJobId) {
+        return
+      }
+      pendingNavRef.current = null
+      return
+    }
+
+    if (paramJobId !== selectedJobId) {
+      setSelectedJobId(paramJobId)
+    }
+  }, [searchParams, selectedJobId])
+
   const selectedJob = useMemo(() => {
     if (!selectedJobId) return null
     return jobs.find(job => job.id === selectedJobId) ?? null
   }, [jobs, selectedJobId])
+
+  const summaryComponents = useMemo(() => ({
+    h1: (props: React.HTMLAttributes<HTMLHeadingElement>) => (
+      <h1 className="mt-10 text-2xl font-semibold leading-tight text-gray-900" {...props} />
+    ),
+    h2: (props: React.HTMLAttributes<HTMLHeadingElement>) => (
+      <h2 className="mt-8 text-xl font-semibold leading-tight text-gray-900" {...props} />
+    ),
+    h3: (props: React.HTMLAttributes<HTMLHeadingElement>) => (
+      <h3 className="mt-6 text-lg font-semibold leading-snug text-gray-900" {...props} />
+    ),
+    p: ({ children, ...props }: React.HTMLAttributes<HTMLParagraphElement>) => {
+      const childArray = Children.toArray(children)
+      if (childArray.length === 1 && typeof childArray[0] === 'string') {
+        const text = childArray[0].trim()
+        const labelMatch = text.match(/^([A-Za-z0-9()\-/\s]+):\s*(.*)$/)
+        const headingMatch = text.match(/^[A-Z][A-Za-z\s/()-]{1,40}$/)
+
+        if (labelMatch) {
+          const [, label, value] = labelMatch
+          return (
+            <div className="mb-4 flex flex-col gap-1 md:flex-row md:items-baseline md:gap-4">
+              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500 md:text-sm">
+                {label.trim()}
+              </span>
+              <span className="text-base leading-relaxed text-gray-800 md:text-lg md:leading-8">
+                {value?.length ? value : '—'}
+              </span>
+            </div>
+          )
+        }
+
+        if (headingMatch && text.length < 35) {
+          return (
+            <h4 className="mt-6 text-lg font-semibold uppercase tracking-wide text-gray-700" {...props}>
+              {text}
+            </h4>
+          )
+        }
+      }
+
+      return (
+        <p
+          className="mb-5 whitespace-pre-line text-base leading-relaxed text-gray-700 md:text-lg md:leading-8"
+          {...props}
+        >
+          {children}
+        </p>
+      )
+    },
+    strong: (props: React.HTMLAttributes<HTMLElement>) => (
+      <strong className="font-semibold text-gray-900" {...props} />
+    ),
+    ul: (props: React.HTMLAttributes<HTMLUListElement>) => (
+      <ul className="list-disc space-y-3 pl-6 text-base leading-relaxed text-gray-700 md:text-lg md:leading-8" {...props} />
+    ),
+    ol: (props: React.HTMLAttributes<HTMLOListElement>) => (
+      <ol className="list-decimal space-y-3 pl-6 text-base leading-relaxed text-gray-700 md:text-lg md:leading-8" {...props} />
+    ),
+    li: (props: React.HTMLAttributes<HTMLLIElement>) => (
+      <li className="leading-relaxed" {...props} />
+    ),
+    blockquote: (props: React.HTMLAttributes<HTMLQuoteElement>) => (
+      <blockquote className="border-l-4 border-gray-300 pl-4 italic text-gray-600" {...props} />
+    ),
+    table: (props: React.HTMLAttributes<HTMLTableElement>) => (
+      <table className="w-full text-sm text-gray-700" {...props} />
+    ),
+    th: (props: React.HTMLAttributes<HTMLTableCellElement>) => (
+      <th className="border-b border-gray-200 px-3 py-2 text-left font-semibold" {...props} />
+    ),
+    td: (props: React.HTMLAttributes<HTMLTableCellElement>) => (
+      <td className="border-b border-gray-100 px-3 py-2 align-top" {...props} />
+    ),
+    code: ({ inline, children, ...props }: React.HTMLAttributes<HTMLElement> & { inline?: boolean }) => (
+      inline ? (
+        <code className="rounded bg-gray-100 px-1 py-0.5 text-sm text-pink-600" {...props}>
+          {children}
+        </code>
+      ) : (
+        <code className="block rounded-lg bg-gray-900 p-4 text-sm text-gray-100" {...props}>
+          {children}
+        </code>
+      )
+    ),
+  }), [])
 
   // Fetch environment status
   useEffect(() => {
@@ -117,34 +229,55 @@ function HomeContent() {
 
   // Handle job selection with URL update
   const selectJob = useCallback((job: Job | null) => {
-    const nextId = job?.id ?? null
-    setSelectedJobId(nextId)
-    if (nextId) {
-      router.push(`/?job=${nextId}`)
+    if (job) {
+      pendingNavRef.current = 'push'
+      setSelectedJobId(job.id)
+      router.push(`/?job=${job.id}`)
     } else {
-      router.push('/')
+      pendingNavRef.current = 'clear'
+      setSelectedJobId(null)
+      if (typeof window !== 'undefined' && window.history.length > 1) {
+        router.back()
+      } else {
+        router.replace('/', { scroll: false })
+      }
     }
   }, [router])
 
   // Load job from URL on mount and when jobs change
   useEffect(() => {
     const jobId = searchParams.get('job')
-    if (jobId) {
+
+    if (jobId && jobs.some(job => job.id === jobId)) {
       setSelectedJobId(prev => (prev === jobId ? prev : jobId))
       return
     }
 
-    // Clear selection if the currently selected job no longer exists
+    if (!jobId) {
+      setSelectedJobId(null)
+      router.replace('/')
+      return
+    }
+
     if (selectedJobId && !jobs.some(job => job.id === selectedJobId)) {
       setSelectedJobId(null)
     }
-  }, [searchParams, jobs, selectedJobId])
+  }, [searchParams, jobs, selectedJobId, router])
 
   useEffect(() => {
     fetchJobs()
     const interval = setInterval(fetchJobs, 5000)
     return () => clearInterval(interval)
   }, [fetchJobs])
+
+  // Ensure URL state stays in sync with job list (e.g. deleted jobs)
+  useEffect(() => {
+    if (selectedJobId && !selectedJob) {
+      pendingNavRef.current = 'clear'
+      setSelectedJobId(null)
+      router.replace('/', { scroll: false })
+    }
+  }, [selectedJobId, selectedJob, router])
 
   // Load transcript when job is selected
   useEffect(() => {
@@ -281,14 +414,24 @@ function HomeContent() {
         <div className="bg-white border-b sticky top-0 z-10">
           <div className="p-4">
             <div className="flex items-center gap-2 mb-2">
-              <Button
-                variant="ghost"
-                size="sm"
+              <button
                 onClick={() => selectJob(null)}
-                className="p-0 h-auto"
+                className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-medium text-gray-600 shadow-sm transition hover:border-gray-300 hover:text-gray-800"
               >
-                ← Back
-              </Button>
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                  className="h-4 w-4"
+                >
+                  <path
+                    fillRule="evenodd"
+                    d="M17 10a.75.75 0 0 1-.75.75H5.56l4.22 4.22a.75.75 0 1 1-1.06 1.06l-5.5-5.5a.75.75 0 0 1 0-1.06l5.5-5.5a.75.75 0 1 1 1.06 1.06L5.56 9.25H16.25A.75.75 0 0 1 17 10Z"
+                    clipRule="evenodd"
+                  />
+                </svg>
+                Back
+              </button>
             </div>
             <h2 className="text-lg font-semibold">
               {selectedJob.title || 'Meeting Details'}
@@ -708,88 +851,3 @@ function HomeContent() {
     </div>
   )
 }
-  const summaryComponents = useMemo(() => ({
-    h1: ({ node, ...props }: React.HTMLAttributes<HTMLHeadingElement>) => (
-      <h1 className="mt-10 text-2xl font-semibold leading-tight text-gray-900" {...props} />
-    ),
-    h2: ({ node, ...props }: React.HTMLAttributes<HTMLHeadingElement>) => (
-      <h2 className="mt-8 text-xl font-semibold leading-tight text-gray-900" {...props} />
-    ),
-    h3: ({ node, ...props }: React.HTMLAttributes<HTMLHeadingElement>) => (
-      <h3 className="mt-6 text-lg font-semibold leading-snug text-gray-900" {...props} />
-    ),
-    p: ({ node, children, ...props }: React.HTMLAttributes<HTMLParagraphElement>) => {
-      const childArray = Children.toArray(children)
-      if (childArray.length === 1 && typeof childArray[0] === 'string') {
-        const text = childArray[0].trim()
-        const labelMatch = text.match(/^([A-Za-z0-9()\-/\s]+):\s*(.*)$/)
-        const headingMatch = text.match(/^[A-Z][A-Za-z\s/()-]{1,40}$/)
-
-        if (labelMatch) {
-          const [, label, value] = labelMatch
-          return (
-            <div className="mb-4 flex flex-col gap-1 md:flex-row md:items-baseline md:gap-4">
-              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500 md:text-sm">
-                {label.trim()}
-              </span>
-              <span className="text-base leading-relaxed text-gray-800 md:text-lg md:leading-8">
-                {value?.length ? value : '—'}
-              </span>
-            </div>
-          )
-        }
-
-        if (headingMatch && text.length < 35) {
-          return (
-            <h4 className="mt-6 text-lg font-semibold uppercase tracking-wide text-gray-700" {...props}>
-              {text}
-            </h4>
-          )
-        }
-      }
-
-      return (
-        <p
-          className="mb-5 whitespace-pre-line text-base leading-relaxed text-gray-700 md:text-lg md:leading-8"
-          {...props}
-        >
-          {children}
-        </p>
-      )
-    },
-    strong: ({ node, ...props }: React.HTMLAttributes<HTMLElement>) => (
-      <strong className="font-semibold text-gray-900" {...props} />
-    ),
-    ul: ({ node, ...props }: React.HTMLAttributes<HTMLUListElement>) => (
-      <ul className="list-disc space-y-3 pl-6 text-base leading-relaxed text-gray-700 md:text-lg md:leading-8" {...props} />
-    ),
-    ol: ({ node, ...props }: React.HTMLAttributes<HTMLOListElement>) => (
-      <ol className="list-decimal space-y-3 pl-6 text-base leading-relaxed text-gray-700 md:text-lg md:leading-8" {...props} />
-    ),
-    li: ({ node, ...props }: React.HTMLAttributes<HTMLLIElement>) => (
-      <li className="leading-relaxed" {...props} />
-    ),
-    blockquote: ({ node, ...props }: React.HTMLAttributes<HTMLQuoteElement>) => (
-      <blockquote className="border-l-4 border-gray-300 pl-4 italic text-gray-600" {...props} />
-    ),
-    table: ({ node, ...props }: React.HTMLAttributes<HTMLTableElement>) => (
-      <table className="w-full text-sm text-gray-700" {...props} />
-    ),
-    th: ({ node, ...props }: React.HTMLAttributes<HTMLTableCellElement>) => (
-      <th className="border-b border-gray-200 px-3 py-2 text-left font-semibold" {...props} />
-    ),
-    td: ({ node, ...props }: React.HTMLAttributes<HTMLTableCellElement>) => (
-      <td className="border-b border-gray-100 px-3 py-2 align-top" {...props} />
-    ),
-    code: ({ node, inline, className, children, ...props }: React.HTMLAttributes<HTMLElement> & { inline?: boolean }) => (
-      inline ? (
-        <code className="rounded bg-gray-100 px-1 py-0.5 text-sm text-pink-600" {...props}>
-          {children}
-        </code>
-      ) : (
-        <code className="block rounded-lg bg-gray-900 p-4 text-sm text-gray-100" {...props}>
-          {children}
-        </code>
-      )
-    ),
-  }), [])
