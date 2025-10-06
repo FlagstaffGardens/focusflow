@@ -4,27 +4,27 @@ import { Readable } from 'stream';
 import fs from 'fs';
 import path from 'path';
 
-if (!process.env.GOOGLE_SERVICE_ACCOUNT_KEY) {
-  throw new Error('GOOGLE_SERVICE_ACCOUNT_KEY environment variable is required');
-}
-
-if (!process.env.GOOGLE_DRIVE_FOLDER_ID) {
-  throw new Error('GOOGLE_DRIVE_FOLDER_ID environment variable is required');
-}
-
-// Parse service account key (supports JSON string or path to JSON file)
+// Lazily create Drive client to avoid build-time env dependency
 type ServiceAccountKey = { client_email: string; private_key: string };
+let cachedAuth: JWT | null = null;
+let cachedDrive: ReturnType<typeof google.drive> | null = null;
+
+function requireEnv(name: string): string {
+  const val = process.env[name];
+  if (!val || !val.trim()) {
+    throw new Error(`${name} environment variable is required`);
+  }
+  return val;
+}
 
 function loadServiceAccountKey(): ServiceAccountKey {
-  const raw = process.env.GOOGLE_SERVICE_ACCOUNT_KEY as string;
+  const raw = requireEnv('GOOGLE_SERVICE_ACCOUNT_KEY');
   const trimmed = raw.trim();
 
-  // If it looks like inline JSON, parse directly
   if (trimmed.startsWith('{')) {
     return JSON.parse(trimmed) as ServiceAccountKey;
   }
 
-  // Otherwise treat as file path (absolute or relative)
   const candidatePaths = [trimmed, path.resolve(process.cwd(), trimmed)];
   for (const p of candidatePaths) {
     if (fs.existsSync(p)) {
@@ -36,20 +36,22 @@ function loadServiceAccountKey(): ServiceAccountKey {
   throw new Error('GOOGLE_SERVICE_ACCOUNT_KEY must be JSON or a path to a JSON file');
 }
 
-const serviceAccountKey = loadServiceAccountKey();
+function getDriveInternal() {
+  if (cachedDrive) return cachedDrive;
 
-// Create JWT auth client (new recommended way, no deprecation warnings)
-const auth = new JWT({
-  email: serviceAccountKey.client_email,
-  key: serviceAccountKey.private_key,
-  scopes: ['https://www.googleapis.com/auth/drive.readonly'],
-});
+  const serviceAccountKey = loadServiceAccountKey();
+  cachedAuth = new JWT({
+    email: serviceAccountKey.client_email,
+    key: serviceAccountKey.private_key,
+    scopes: ['https://www.googleapis.com/auth/drive.readonly'],
+  });
+  cachedDrive = google.drive({ version: 'v3', auth: cachedAuth });
+  return cachedDrive;
+}
 
-// Create Drive client
-export const drive = google.drive({ version: 'v3', auth });
-
-// Export constants
-export const FOLDER_ID = process.env.GOOGLE_DRIVE_FOLDER_ID;
+function getFolderId(): string {
+  return requireEnv('GOOGLE_DRIVE_FOLDER_ID');
+}
 
 // Lightweight Drive file shape used internally
 export type DriveFile = {
@@ -63,8 +65,10 @@ export type DriveFile = {
  * List all audio files in the configured Google Drive folder
  */
 export async function listAudioFiles(): Promise<DriveFile[]> {
+  const drive = getDriveInternal();
+  const folderId = getFolderId();
   const response = await drive.files.list({
-    q: `'${FOLDER_ID}' in parents and trashed=false and (mimeType='audio/mpeg' or mimeType='audio/mp4' or mimeType='audio/x-m4a' or mimeType='audio/amr')`,
+    q: `'${folderId}' in parents and trashed=false and (mimeType='audio/mpeg' or mimeType='audio/mp4' or mimeType='audio/x-m4a' or mimeType='audio/amr')`,
     fields: 'files(id, name, mimeType, size, createdTime, owners)',
     orderBy: 'createdTime desc',
     pageSize: 1000,
@@ -86,8 +90,10 @@ export async function listAudioFiles(): Promise<DriveFile[]> {
  * List JSON metadata files in the configured Google Drive folder
  */
 export async function listJsonFiles(): Promise<DriveFile[]> {
+  const drive = getDriveInternal();
+  const folderId = getFolderId();
   const response = await drive.files.list({
-    q: `'${FOLDER_ID}' in parents and trashed=false and mimeType='application/json'`,
+    q: `'${folderId}' in parents and trashed=false and mimeType='application/json'`,
     fields: 'files(id, name)',
     orderBy: 'createdTime desc',
     pageSize: 1000,
@@ -107,6 +113,7 @@ export async function listJsonFiles(): Promise<DriveFile[]> {
  * Get file by ID
  */
 export async function getFile(fileId: string) {
+  const drive = getDriveInternal();
   const response = await drive.files.get({
     fileId,
     fields: 'id, name, mimeType, size, createdTime, owners, webContentLink',
@@ -120,6 +127,7 @@ export async function getFile(fileId: string) {
  * Returns a readable stream that can be piped to transcription services
  */
 export async function getAudioStream(fileId: string): Promise<Readable> {
+  const drive = getDriveInternal();
   const response = await drive.files.get(
     { fileId, alt: 'media' },
     { responseType: 'stream' }
@@ -132,6 +140,7 @@ export async function getAudioStream(fileId: string): Promise<Readable> {
  * Get JSON metadata content
  */
 export async function getJsonContent<T = unknown>(fileId: string): Promise<T> {
+  const drive = getDriveInternal();
   const response = await drive.files.get(
     { fileId, alt: 'media' },
     { responseType: 'stream' }
