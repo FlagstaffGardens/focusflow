@@ -3,17 +3,16 @@
 FROM node:20-bookworm-slim AS base
 ENV NODE_ENV=production
 WORKDIR /app
-RUN corepack enable
 
 FROM base AS deps
-COPY package.json pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile
+COPY package.json package-lock.json ./
+RUN npm ci
 
 FROM base AS builder
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-RUN pnpm build
+RUN npm run build
 
 FROM base AS runner
 ENV NODE_ENV=production
