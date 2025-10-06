@@ -385,13 +385,16 @@ function HomeContent() {
     if (!dateToUse) return 'Unknown date'
 
     const date = new Date(dateToUse)
-    return date.toLocaleString('en-US', {
+    // Force Melbourne, Australia timezone regardless of client/server locale
+    return new Intl.DateTimeFormat('en-AU', {
+      timeZone: 'Australia/Melbourne',
       month: 'short',
       day: 'numeric',
       hour: '2-digit',
       minute: '2-digit',
       year: 'numeric',
-    })
+      hour12: true,
+    }).format(date)
   }
 
   if (isMobile) {

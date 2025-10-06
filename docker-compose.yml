@@ -6,6 +6,7 @@ services:
     environment:
       HOSTNAME: 0.0.0.0
       HOST: 0.0.0.0
+      TZ: Australia/Melbourne
     expose:
       - "3000"
     ports:

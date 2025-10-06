@@ -113,11 +113,14 @@ export async function POST(
 
     console.log(`[${jobId}] Starting summarization...`);
 
+    const melbourneDate = new Intl.DateTimeFormat('en-AU', {
+      timeZone: 'Australia/Melbourne',
+      year: 'numeric', month: 'short', day: 'numeric'
+    }).format(job.call_timestamp ? new Date(job.call_timestamp) : new Date());
+
     const summaryGenerator = summarizeWithGPT(
       transcript,
-      job.call_timestamp
-        ? new Date(job.call_timestamp).toLocaleDateString()
-        : new Date().toLocaleDateString(),
+      melbourneDate,
       {
         apiKey: process.env.OPENAI_API_KEY || '',
         baseUrl: process.env.OPENAI_BASE_URL,
