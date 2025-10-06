@@ -51,10 +51,18 @@ export const drive = google.drive({ version: 'v3', auth });
 // Export constants
 export const FOLDER_ID = process.env.GOOGLE_DRIVE_FOLDER_ID;
 
+// Lightweight Drive file shape used internally
+export type DriveFile = {
+  id: string;
+  name: string;
+  size?: string;
+  owners?: Array<{ emailAddress?: string }>;
+};
+
 /**
  * List all audio files in the configured Google Drive folder
  */
-export async function listAudioFiles() {
+export async function listAudioFiles(): Promise<DriveFile[]> {
   const response = await drive.files.list({
     q: `'${FOLDER_ID}' in parents and trashed=false and (mimeType='audio/mpeg' or mimeType='audio/mp4' or mimeType='audio/x-m4a' or mimeType='audio/amr')`,
     fields: 'files(id, name, mimeType, size, createdTime, owners)',
@@ -62,13 +70,22 @@ export async function listAudioFiles() {
     pageSize: 1000,
   });
 
-  return response.data.files || [];
+  const files = (response.data.files || [])
+    .map((f) => ({
+      id: (f.id || '').toString(),
+      name: (f.name || '').toString(),
+      size: f.size as string | undefined,
+      owners: (f.owners as Array<{ emailAddress?: string }> | undefined),
+    }))
+    .filter((f) => f.id && f.name);
+
+  return files;
 }
 
 /**
  * List JSON metadata files in the configured Google Drive folder
  */
-export async function listJsonFiles() {
+export async function listJsonFiles(): Promise<DriveFile[]> {
   const response = await drive.files.list({
     q: `'${FOLDER_ID}' in parents and trashed=false and mimeType='application/json'`,
     fields: 'files(id, name)',
@@ -76,7 +93,14 @@ export async function listJsonFiles() {
     pageSize: 1000,
   });
 
-  return response.data.files || [];
+  const files = (response.data.files || [])
+    .map((f) => ({
+      id: (f.id || '').toString(),
+      name: (f.name || '').toString(),
+    }))
+    .filter((f) => f.id && f.name);
+
+  return files;
 }
 
 /**

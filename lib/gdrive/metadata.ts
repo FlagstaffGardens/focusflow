@@ -1,13 +1,7 @@
 import { parseCubeACRFilename, getJsonFilename, isCubeACRFile } from '../cube-acr/parser';
 import { getJsonContent, getDriveFileUrl } from './client';
+import type { DriveFile } from './client';
 import type { NewJob } from '../db/schema';
-
-interface DriveFile {
-  id: string;
-  name: string;
-  size?: string;
-  owners?: Array<{ emailAddress?: string }>;
-}
 
 interface CubeACRJsonMetadata {
   duration?: string; // milliseconds as string
@@ -22,7 +16,7 @@ interface CubeACRJsonMetadata {
 export async function extractCubeACRMetadata(
   audioFile: DriveFile,
   jsonFiles: DriveFile[]
-): Promise<Partial<NewJob> | null> {
+): Promise<NewJob | null> {
   try {
     // Check if it's a Cube ACR file
     if (!isCubeACRFile(audioFile.name || '')) {
@@ -63,7 +57,7 @@ export async function extractCubeACRMetadata(
     }
 
     // Construct job data
-    const jobData: Partial<NewJob> = {
+    const jobData: NewJob = {
       source: 'cube-acr',
       status: 'discovered',
 

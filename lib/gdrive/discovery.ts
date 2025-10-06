@@ -60,7 +60,7 @@ export async function discoverNewRecordings(): Promise<DiscoveryResult> {
         const existing = await db
           .select()
           .from(jobs)
-          .where(eq(jobs.gdrive_file_id, audioFile.id || ''))
+          .where(eq(jobs.gdrive_file_id, audioFile.id))
           .limit(1);
 
         if (existing.length > 0) {

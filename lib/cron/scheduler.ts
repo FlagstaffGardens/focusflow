@@ -1,7 +1,8 @@
 import cron from 'node-cron';
+import type { ScheduledTask } from 'node-cron';
 import { discoverNewRecordings } from '../gdrive/discovery';
 
-let cronJob: cron.ScheduledTask | null = null;
+let cronJob: ScheduledTask | null = null;
 
 /**
  * Start the cron job for discovering new recordings every 5 minutes
@@ -18,7 +19,7 @@ export function startCronJobs() {
     console.log('[CRON] Running Google Drive discovery...');
     try {
       const result = await discoverNewRecordings();
-      console.log(`[CRON] Discovery complete: ${result.newRecordings} new, ${result.skipped} skipped`);
+      console.log(`[CRON] Discovery complete: ${result.discovered} new, ${result.skipped} skipped`);
     } catch (error) {
       console.error('[CRON] Discovery failed:', error);
     }
@@ -30,7 +31,7 @@ export function startCronJobs() {
   console.log('[CRON] Running initial discovery...');
   discoverNewRecordings()
     .then(result => {
-      console.log(`[CRON] Initial discovery complete: ${result.newRecordings} new, ${result.skipped} skipped`);
+      console.log(`[CRON] Initial discovery complete: ${result.discovered} new, ${result.skipped} skipped`);
     })
     .catch(error => {
       console.error('[CRON] Initial discovery failed:', error);
