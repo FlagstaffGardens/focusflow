@@ -1,4 +1,5 @@
 import { ParsedFilename } from './types';
+import { localTimeInZoneToDate } from '../utils/timezone';
 
 /**
  * Parse Cube ACR filename to extract call metadata
@@ -22,8 +23,10 @@ export function parseCubeACRFilename(filename: string): ParsedFilename {
     }
 
     const [, datePart, timePart] = timestampMatch;
-    const isoTimestamp = `${datePart}T${timePart.replace(/-/g, ':')}`;
-    const callTimestamp = new Date(isoTimestamp);
+    const [year, month, day] = datePart.split('-').map((v) => parseInt(v, 10));
+    const [hh, mm, ss] = timePart.split('-').map((v) => parseInt(v, 10));
+    // Interpret filename time as Melbourne local time and convert to absolute UTC
+    const callTimestamp = localTimeInZoneToDate(year, month, day, hh, mm, ss, 'Australia/Melbourne');
 
     // Extract call type (phone or whatsapp)
     const typeMatch = nameWithoutExt.match(/\((phone|whatsapp)\)/);

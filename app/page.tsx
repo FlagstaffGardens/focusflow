@@ -8,6 +8,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useMobile } from '@/lib/hooks/use-mobile'
+import { localTimeInZoneToDate } from '@/lib/utils/timezone'
 
 interface Job {
   id: string
@@ -384,8 +385,25 @@ function HomeContent() {
     const dateToUse = job.call_timestamp || job.meeting_date || job.created_at
     if (!dateToUse) return 'Unknown date'
 
-    const date = new Date(dateToUse)
-    // Force Melbourne, Australia timezone regardless of client/server locale
+    // Many drivers serialize Postgres "timestamp without time zone" either as
+    // a naive string or as an ISO string with trailing Z. In our schema, this
+    // value represents Melbourne local time. Parse it as such to avoid a
+    // phantom +10/+11h shift.
+    const m = String(dateToUse).match(
+      /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,6})?)?(?:Z|[+-]\d{2}:?\d{2})?$/
+    )
+    const asMelbourne = m
+      ? localTimeInZoneToDate(
+          parseInt(m[1], 10),
+          parseInt(m[2], 10),
+          parseInt(m[3], 10),
+          parseInt(m[4], 10),
+          parseInt(m[5], 10),
+          m[6] ? parseInt(m[6], 10) : 0,
+          'Australia/Melbourne'
+        )
+      : new Date(dateToUse)
+
     return new Intl.DateTimeFormat('en-AU', {
       timeZone: 'Australia/Melbourne',
       month: 'short',
@@ -394,7 +412,7 @@ function HomeContent() {
       minute: '2-digit',
       year: 'numeric',
       hour12: true,
-    }).format(date)
+    }).format(asMelbourne)
   }
 
   if (isMobile) {

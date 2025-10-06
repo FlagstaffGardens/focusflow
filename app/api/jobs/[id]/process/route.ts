@@ -7,6 +7,7 @@ import { transcribeWithAssemblyAI } from '@/lib/pipeline/assemblyai/client';
 import { summarizeWithGPT } from '@/lib/pipeline/openai/client';
 import { syncJobToNotion } from '@/lib/notion/sync';
 import { writeFile, unlink } from 'fs/promises';
+import { localTimeInZoneToDate } from '@/lib/utils/timezone';
 import path from 'path';
 import os from 'os';
 
@@ -113,10 +114,26 @@ export async function POST(
 
     console.log(`[${jobId}] Starting summarization...`);
 
+    const ts = job.call_timestamp ? String(job.call_timestamp) : null;
+    const m = ts?.match(
+      /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,6})?)?(?:Z|[+-]\d{2}:?\d{2})?$/
+    );
+    const callDate = m
+      ? localTimeInZoneToDate(
+          parseInt(m[1], 10),
+          parseInt(m[2], 10),
+          parseInt(m[3], 10),
+          parseInt(m[4], 10),
+          parseInt(m[5], 10),
+          m[6] ? parseInt(m[6], 10) : 0,
+          'Australia/Melbourne'
+        )
+      : (job.call_timestamp ? new Date(job.call_timestamp) : new Date());
+
     const melbourneDate = new Intl.DateTimeFormat('en-AU', {
       timeZone: 'Australia/Melbourne',
       year: 'numeric', month: 'short', day: 'numeric'
-    }).format(job.call_timestamp ? new Date(job.call_timestamp) : new Date());
+    }).format(callDate);
 
     const summaryGenerator = summarizeWithGPT(
       transcript,
