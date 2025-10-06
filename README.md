@@ -124,6 +124,7 @@ PORT=3000
 DATABASE_URL=postgresql://postgres:password@host:5432/focusflow
 
 # Google Drive
+# GOOGLE_SERVICE_ACCOUNT_KEY accepts either inline JSON or a path to a JSON file
 GOOGLE_SERVICE_ACCOUNT_KEY={"type":"service_account",...}
 GOOGLE_DRIVE_FOLDER_ID=your-folder-id
 ALLOWED_USERS=your-email@gmail.com

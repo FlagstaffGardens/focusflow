@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, text, timestamp, integer, json } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, text, timestamp, integer } from 'drizzle-orm/pg-core';
 
 export const jobs = pgTable('jobs', {
   // Primary key

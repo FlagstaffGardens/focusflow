@@ -4,7 +4,6 @@ import { Suspense, useState, useEffect, useCallback, useMemo, Children, type Mou
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -69,8 +68,6 @@ function HomeContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [jobs, setJobs] = useState<Job[]>([])
-  const [url, setUrl] = useState('')
-  const [loading, setLoading] = useState(false)
   const [envStatus, setEnvStatus] = useState<EnvStatus>({ assemblyai: false, openai: false })
   const [transcript, setTranscript] = useState<string>('')
   const [showTranscript, setShowTranscript] = useState(false)
@@ -230,27 +227,7 @@ function HomeContent() {
     }
   }, [selectedJob, loadTranscript])
 
-  const createJob = async () => {
-    if (!url) return
-
-    setLoading(true)
-    try {
-      const response = await fetch('/api/jobs', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url }),
-      })
-
-      if (response.ok) {
-        setUrl('')
-        fetchJobs()
-      }
-    } catch (error) {
-      console.error('Failed to create job:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
+  // Removed unused URL submission flow from v1 UI
 
   const deleteJob = async (
     jobId: string,

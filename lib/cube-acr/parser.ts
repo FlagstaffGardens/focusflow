@@ -1,4 +1,4 @@
-import { CubeACRMetadata, ParsedFilename } from './types';
+import { ParsedFilename } from './types';
 
 /**
  * Parse Cube ACR filename to extract call metadata

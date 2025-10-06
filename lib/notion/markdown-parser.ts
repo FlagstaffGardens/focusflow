@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * Convert markdown text to Notion blocks
  * Handles headers, bold, lists, paragraphs

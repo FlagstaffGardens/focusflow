@@ -49,7 +49,7 @@ export async function extractCubeACRMetadata(
     if (jsonFile && jsonFile.id) {
       try {
         jsonFileId = jsonFile.id;
-        const jsonContent: CubeACRJsonMetadata = await getJsonContent(jsonFile.id);
+        const jsonContent = await getJsonContent<CubeACRJsonMetadata>(jsonFile.id);
 
         // Duration is in milliseconds, convert to seconds
         if (jsonContent.duration) {
@@ -61,9 +61,6 @@ export async function extractCubeACRMetadata(
         // Continue without duration
       }
     }
-
-    // Get file owner email
-    const ownerEmail = audioFile.owners?.[0]?.emailAddress;
 
     // Construct job data
     const jobData: Partial<NewJob> = {

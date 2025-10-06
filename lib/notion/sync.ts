@@ -1,18 +1,18 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Client } from '@notionhq/client';
 import type { Job } from '../db/schema';
 import { getDriveFileUrl } from '../gdrive/client';
 import { markdownToNotionBlocks } from './markdown-parser';
 
-if (!process.env.NOTION_API_KEY) {
-  throw new Error('NOTION_API_KEY environment variable is required');
+function getNotionClient() {
+  const apiKey = process.env.NOTION_API_KEY;
+  const dbId = process.env.NOTION_DATABASE_ID;
+  if (!apiKey || !dbId) return null;
+  return {
+    notion: new Client({ auth: apiKey }),
+    databaseId: dbId,
+  };
 }
-
-if (!process.env.NOTION_DATABASE_ID) {
-  throw new Error('NOTION_DATABASE_ID environment variable is required');
-}
-
-const notion = new Client({ auth: process.env.NOTION_API_KEY });
-const DATABASE_ID = process.env.NOTION_DATABASE_ID;
 
 /**
  * Helper function to split long text into 2000-char chunks for Notion
@@ -58,6 +58,11 @@ function splitTextIntoChunks(text: string, maxLength: number = 2000): string[] {
  */
 export async function syncJobToNotion(job: Job): Promise<{ pageId: string; url: string }> {
   try {
+    const ctx = getNotionClient();
+    if (!ctx) {
+      throw new Error('Notion not configured');
+    }
+    const { notion, databaseId } = ctx;
     // Prepare title
     const title = job.contact_name
       ? `${job.call_type === 'whatsapp' ? '💬' : '📞'} ${job.contact_name} ${job.call_direction === 'incoming' ? '↙' : '↗'}`
@@ -180,7 +185,7 @@ export async function syncJobToNotion(job: Job): Promise<{ pageId: string; url: 
     const remainingBlocks = children.slice(100);
 
     const page = await notion.pages.create({
-      parent: { database_id: DATABASE_ID },
+      parent: { database_id: databaseId },
       properties,
       children: firstBatch.length > 0 ? firstBatch : undefined,
     });
@@ -212,6 +217,11 @@ export async function syncJobToNotion(job: Job): Promise<{ pageId: string; url: 
  */
 export async function updateNotionStatus(pageId: string, status: string): Promise<void> {
   try {
+    const ctx = getNotionClient();
+    if (!ctx) {
+      throw new Error('Notion not configured');
+    }
+    const { notion } = ctx;
     await notion.pages.update({
       page_id: pageId,
       properties: {

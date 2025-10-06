@@ -1,6 +1,8 @@
 import { google } from 'googleapis';
 import { JWT } from 'google-auth-library';
 import { Readable } from 'stream';
+import fs from 'fs';
+import path from 'path';
 
 if (!process.env.GOOGLE_SERVICE_ACCOUNT_KEY) {
   throw new Error('GOOGLE_SERVICE_ACCOUNT_KEY environment variable is required');
@@ -10,8 +12,31 @@ if (!process.env.GOOGLE_DRIVE_FOLDER_ID) {
   throw new Error('GOOGLE_DRIVE_FOLDER_ID environment variable is required');
 }
 
-// Parse service account key
-const serviceAccountKey = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_KEY);
+// Parse service account key (supports JSON string or path to JSON file)
+type ServiceAccountKey = { client_email: string; private_key: string };
+
+function loadServiceAccountKey(): ServiceAccountKey {
+  const raw = process.env.GOOGLE_SERVICE_ACCOUNT_KEY as string;
+  const trimmed = raw.trim();
+
+  // If it looks like inline JSON, parse directly
+  if (trimmed.startsWith('{')) {
+    return JSON.parse(trimmed) as ServiceAccountKey;
+  }
+
+  // Otherwise treat as file path (absolute or relative)
+  const candidatePaths = [trimmed, path.resolve(process.cwd(), trimmed)];
+  for (const p of candidatePaths) {
+    if (fs.existsSync(p)) {
+      const content = fs.readFileSync(p, 'utf-8');
+      return JSON.parse(content) as ServiceAccountKey;
+    }
+  }
+
+  throw new Error('GOOGLE_SERVICE_ACCOUNT_KEY must be JSON or a path to a JSON file');
+}
+
+const serviceAccountKey = loadServiceAccountKey();
 
 // Create JWT auth client (new recommended way, no deprecation warnings)
 const auth = new JWT({
@@ -82,7 +107,7 @@ export async function getAudioStream(fileId: string): Promise<Readable> {
 /**
  * Get JSON metadata content
  */
-export async function getJsonContent(fileId: string): Promise<any> {
+export async function getJsonContent<T = unknown>(fileId: string): Promise<T> {
   const response = await drive.files.get(
     { fileId, alt: 'media' },
     { responseType: 'stream' }
@@ -96,7 +121,7 @@ export async function getJsonContent(fileId: string): Promise<any> {
       })
       .on('end', () => {
         try {
-          resolve(JSON.parse(jsonData));
+          resolve(JSON.parse(jsonData) as T);
         } catch (error) {
           reject(new Error('Failed to parse JSON: ' + error));
         }

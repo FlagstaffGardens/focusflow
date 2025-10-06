@@ -6,7 +6,6 @@ import { getAudioStream } from '@/lib/gdrive/client';
 import { transcribeWithAssemblyAI } from '@/lib/pipeline/assemblyai/client';
 import { summarizeWithGPT } from '@/lib/pipeline/openai/client';
 import { syncJobToNotion } from '@/lib/notion/sync';
-import { Readable } from 'stream';
 import { writeFile, unlink } from 'fs/promises';
 import path from 'path';
 import os from 'os';
