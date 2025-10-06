@@ -19,6 +19,12 @@ tmp-job-data/
 .env.*
 !.env.example
 
+# Service account keys
+*.json
+!package.json
+!package-lock.json
+!tsconfig.json
+
 # Editors & OS
 .vscode/
 .idea/

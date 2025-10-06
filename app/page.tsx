@@ -12,20 +12,40 @@ import { useMobile } from '@/lib/hooks/use-mobile'
 
 interface Job {
   id: string
-  url: string
-  resolved_url?: string
-  meeting_date?: string
-  status: 'queued' | 'resolving' | 'downloading' | 'transcribing' | 'summarizing' | 'completed' | 'error'
+  status: 'discovered' | 'transcribing' | 'transcribed' | 'summarizing' | 'syncing' | 'completed' | 'failed'
+  source: 'plaud' | 'cube-acr'
+
+  // Cube ACR specific
+  contact_name?: string | null
+  contact_number?: string | null
+  call_direction?: 'incoming' | 'outgoing' | null
+  call_timestamp?: string | null
+  call_type?: 'phone' | 'whatsapp' | null
+  duration_seconds?: number | null
+  gdrive_file_id?: string | null
+  gdrive_file_name?: string | null
+
+  // Plaud.ai (backwards compat)
+  url?: string
+  plaud_url?: string | null
   title?: string
-  summary?: string
-  summary_path?: string
-  transcript?: string
-  transcript_path?: string
-  file_path?: string
-  created_at: number
-  updated_at: number
-  error?: string
-  logs?: string[]
+  meeting_date?: string
+
+  // Processing results
+  summary?: string | null
+  transcript?: string | null
+
+  // Notion
+  notion_page_id?: string | null
+  notion_url?: string | null
+
+  // Error tracking
+  error_message?: string | null
+
+  // Timestamps
+  created_at: string
+  updated_at?: string
+  discovered_at?: string | null
 }
 
 interface EnvStatus {
@@ -168,12 +188,8 @@ function HomeContent() {
       const response = await fetch('/api/jobs')
       const data = await response.json()
       const jobsList = data.jobs || []
-      const sortedJobs = jobsList.sort((a: Job, b: Job) => {
-        const dateA = a.meeting_date ? new Date(a.meeting_date).getTime() : a.created_at
-        const dateB = b.meeting_date ? new Date(b.meeting_date).getTime() : b.created_at
-        return dateB - dateA
-      })
-      setJobs(sortedJobs)
+      // Jobs are already sorted by created_at desc from the API
+      setJobs(jobsList)
     } catch (error) {
       console.error('Failed to fetch jobs:', error)
     }
@@ -194,20 +210,8 @@ function HomeContent() {
   }, [selectedJobId, jobs])
 
   const loadTranscript = useCallback(async (job: Job) => {
-    if (!job.transcript_path) {
-      setTranscript('')
-      return
-    }
-
-    try {
-      const response = await fetch(`/api/jobs/${job.id}/transcript`)
-      if (response.ok) {
-        const data = await response.json()
-        setTranscript(data.transcript || '')
-      }
-    } catch (error) {
-      console.error('Failed to load transcript:', error)
-    }
+    // Transcript is now stored directly in the job object (V2)
+    setTranscript(job.transcript || '')
   }, [])
 
   const selectJob = useCallback((job: Job | null) => {
@@ -292,6 +296,53 @@ function HomeContent() {
     }
   }
 
+  const transcribeJob = async (jobId: string, e?: React.MouseEvent) => {
+    e?.stopPropagation()
+    try {
+      // Optimistically update UI to show processing state
+      setJobs(prev => prev.map(j =>
+        j.id === jobId ? { ...j, status: 'transcribing' as const } : j
+      ))
+
+      const response = await fetch(`/api/jobs/${jobId}/process`, {
+        method: 'POST',
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.message || 'Processing failed')
+      }
+
+      // Fetch updated job list
+      fetchJobs()
+    } catch (error) {
+      console.error('Failed to transcribe job:', error)
+      // Revert on error
+      fetchJobs()
+    }
+  }
+
+  const syncToNotion = async (jobId: string, e?: React.MouseEvent) => {
+    e?.stopPropagation()
+    try {
+      const response = await fetch(`/api/jobs/${jobId}/sync-notion`, {
+        method: 'POST',
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Notion sync failed')
+      }
+
+      // Fetch updated job list to get new Notion URL
+      fetchJobs()
+    } catch (error) {
+      console.error('Failed to sync to Notion:', error)
+      alert(error instanceof Error ? error.message : 'Failed to sync to Notion')
+    }
+  }
+
   const copyToClipboard = async (text: string, type: 'transcript' | 'summary') => {
     try {
       await navigator.clipboard.writeText(text)
@@ -310,27 +361,50 @@ function HomeContent() {
   const getStatusColor = (status: Job['status']) => {
     switch (status) {
       case 'completed': return 'text-green-600'
-      case 'error': return 'text-red-600'
-      case 'queued': return 'text-gray-500'
-      default: return 'text-blue-600'
+      case 'failed': return 'text-red-600'
+      case 'discovered': return 'text-gray-500'
+      case 'transcribing': return 'text-blue-600'
+      case 'transcribed': return 'text-blue-600'
+      case 'summarizing': return 'text-blue-600'
+      case 'syncing': return 'text-purple-600'
+      default: return 'text-gray-600'
     }
   }
 
   const getStatusIcon = (status: Job['status']) => {
+    const isProcessing = ['transcribing', 'transcribed', 'summarizing', 'syncing'].includes(status)
+    const spinnerClass = isProcessing ? 'inline-block animate-spin' : ''
+
     switch (status) {
       case 'completed': return '✓'
-      case 'error': return '✗'
-      case 'queued': return '⏳'
-      case 'resolving': return '🔍'
-      case 'downloading': return '⬇️'
-      case 'transcribing': return '📝'
-      case 'summarizing': return '📋'
+      case 'failed': return '✗'
+      case 'discovered': return '🔍'
+      case 'transcribing': return <span className={spinnerClass}>⏳</span>
+      case 'transcribed': return <span className={spinnerClass}>⏳</span>
+      case 'summarizing': return <span className={spinnerClass}>⏳</span>
+      case 'syncing': return <span className={spinnerClass}>☁️</span>
       default: return '•'
     }
   }
 
-  const formatDate = (meetingDate: string | undefined, fallback?: number) => {
-    const dateToUse = meetingDate || (fallback ? new Date(fallback).toISOString() : null)
+  const getJobTitle = (job: Job) => {
+    if (job.contact_name) {
+      const typeIcon = job.call_type === 'whatsapp' ? '💬' : '📞'
+      const directionIcon = job.call_direction === 'incoming' ? '↙' : '↗'
+      return `${typeIcon} ${job.contact_name} ${directionIcon}`
+    }
+    return job.title || 'Untitled Meeting'
+  }
+
+  const formatDuration = (seconds?: number | null) => {
+    if (!seconds) return null
+    const mins = Math.floor(seconds / 60)
+    const secs = seconds % 60
+    return `${mins}m ${secs}s`
+  }
+
+  const formatDate = (job: Job) => {
+    const dateToUse = job.call_timestamp || job.meeting_date || job.created_at
     if (!dateToUse) return 'Unknown date'
 
     const date = new Date(dateToUse)
@@ -370,10 +444,13 @@ function HomeContent() {
               </button>
             </div>
             <h2 className="text-lg font-semibold">
-              {selectedJob.title || 'Meeting Details'}
+              {getJobTitle(selectedJob)}
             </h2>
             <p className="text-xs text-gray-500 mt-1">
-              {formatDate(selectedJob.meeting_date, selectedJob.created_at)}
+              {formatDate(selectedJob)}
+              {selectedJob.duration_seconds && (
+                <span className="ml-2">• {formatDuration(selectedJob.duration_seconds)}</span>
+              )}
             </p>
             <span className={`text-xs ${getStatusColor(selectedJob.status)}`}>
               {getStatusIcon(selectedJob.status)} {selectedJob.status}
@@ -382,8 +459,51 @@ function HomeContent() {
         </div>
 
         <div className="flex-1 overflow-y-auto">
-          {selectedJob.status === 'completed' && (
+          {selectedJob.status === 'discovered' && (
             <div className="p-4 bg-white border-b">
+              <Button
+                onClick={() => transcribeJob(selectedJob.id)}
+                size="sm"
+                className="w-full bg-blue-600 hover:bg-blue-700"
+              >
+                ▶ Transcribe
+              </Button>
+            </div>
+          )}
+
+          {['transcribing', 'transcribed', 'summarizing', 'syncing'].includes(selectedJob.status) && (
+            <div className="p-4 bg-blue-50 border-b">
+              <div className="flex items-center gap-3">
+                <div className="animate-spin h-4 w-4 border-2 border-blue-600 border-t-transparent rounded-full"></div>
+                <div className="text-sm text-blue-700">
+                  {selectedJob.status === 'transcribing' && 'Transcribing audio...'}
+                  {selectedJob.status === 'transcribed' && 'Preparing summarization...'}
+                  {selectedJob.status === 'summarizing' && 'Generating summary...'}
+                  {selectedJob.status === 'syncing' && 'Syncing to Notion...'}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {selectedJob.status === 'completed' && (
+            <div className="p-4 bg-white border-b space-y-2">
+              <Button
+                onClick={(e) => syncToNotion(selectedJob.id, e)}
+                size="sm"
+                className="w-full bg-purple-600 hover:bg-purple-700"
+              >
+                📝 Sync to Notion
+              </Button>
+              {selectedJob.notion_url && (
+                <a
+                  href={selectedJob.notion_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block w-full text-center rounded-md bg-purple-50 px-4 py-2 text-sm font-medium text-purple-600 border border-purple-200 hover:bg-purple-100"
+                >
+                  View in Notion →
+                </a>
+              )}
               <div className="flex gap-2">
                 {selectedJob.transcript && (
                   <Button
@@ -480,28 +600,11 @@ function HomeContent() {
     return (
       <div className="min-h-screen bg-gray-50">
         <div className="bg-white border-b">
-          <div className="p-4 space-y-4">
-            <div>
-              <Input
-                type="url"
-                placeholder="Enter Plaud.ai share link"
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && createJob()}
-                disabled={loading}
-                className="w-full"
-              />
-              <Button
-                onClick={createJob}
-                disabled={loading || !url}
-                size="sm"
-                className="mt-2 w-full"
-              >
-                {loading ? 'Processing…' : 'Add'}
-              </Button>
-            </div>
+          <div className="p-4">
+            <h1 className="text-xl font-bold">FocusFlow</h1>
+            <p className="text-sm text-gray-600 mt-1">Call Recordings</p>
 
-            <div className="flex gap-3 text-xs">
+            <div className="flex gap-3 text-xs mt-3">
               <span className={envStatus.assemblyai ? 'text-green-600' : 'text-red-600'}>
                 AssemblyAI {envStatus.assemblyai ? '✓' : '✗'}
               </span>
@@ -515,7 +618,7 @@ function HomeContent() {
         <div className="p-4 space-y-3">
           {jobs.length === 0 ? (
             <div className="rounded-lg border border-dashed border-gray-300 bg-white px-6 py-12 text-center text-gray-500">
-              Add a Plaud.ai link to get started.
+              No recordings found. New calls will appear here automatically.
             </div>
           ) : (
             jobs.map(job => (
@@ -525,14 +628,29 @@ function HomeContent() {
                 onClick={() => selectJob(job)}
               >
                 <p className="font-medium truncate">
-                  {job.title || 'Untitled Meeting'}
+                  {getJobTitle(job)}
                 </p>
                 <p className="text-sm text-gray-500 mt-1">
-                  {formatDate(job.meeting_date, job.created_at)}
+                  {formatDate(job)}
+                  {job.duration_seconds && (
+                    <span className="ml-2">• {formatDuration(job.duration_seconds)}</span>
+                  )}
                 </p>
-                <p className={`text-sm mt-1 ${getStatusColor(job.status)}`}>
-                  {job.status}
-                </p>
+                <div className="flex items-center justify-between mt-2">
+                  <p className={`text-sm ${getStatusColor(job.status)}`}>
+                    {getStatusIcon(job.status)} {job.status}
+                  </p>
+                  {job.status === 'discovered' && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={(e) => transcribeJob(job.id, e)}
+                      className="text-xs h-7 px-2 bg-blue-50 hover:bg-blue-100 text-blue-600 border-blue-200"
+                    >
+                      ▶ Transcribe
+                    </Button>
+                  )}
+                </div>
               </Card>
             ))
           )}
@@ -545,24 +663,8 @@ function HomeContent() {
     <div className="flex h-screen bg-gray-50">
       <div className="w-96 border-r bg-white flex flex-col">
         <div className="p-4 border-b">
-          <h1 className="text-2xl font-bold mb-4">FocusFlow</h1>
-          <div className="flex gap-2">
-            <Input
-              type="url"
-              placeholder="Enter Plaud.ai share link"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && createJob()}
-              disabled={loading}
-              className="flex-1"
-            />
-            <Button
-              onClick={createJob}
-              disabled={loading || !url}
-            >
-              {loading ? 'Processing...' : 'Add'}
-            </Button>
-          </div>
+          <h1 className="text-2xl font-bold mb-2">FocusFlow</h1>
+          <p className="text-sm text-gray-600">Call Recordings</p>
 
           <div className="mt-3 flex gap-4 text-xs">
             <span className={envStatus.assemblyai ? 'text-green-600' : 'text-red-600'}>
@@ -577,7 +679,7 @@ function HomeContent() {
         <ScrollArea className="flex-1">
           <div className="p-2">
             {jobs.length === 0 ? (
-              <p className="text-center text-gray-500 py-8">No jobs yet</p>
+              <p className="text-center text-gray-500 py-8">No recordings yet</p>
             ) : (
               jobs.map((job) => (
                 <Card
@@ -590,16 +692,31 @@ function HomeContent() {
                   <div className="flex items-start justify-between">
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-sm truncate">
-                        {job.title || 'Untitled Meeting'}
+                        {getJobTitle(job)}
                       </p>
                       <p className="text-xs text-gray-500 mt-1">
-                        {formatDate(job.meeting_date, job.created_at)}
+                        {formatDate(job)}
                       </p>
+                      {job.duration_seconds && (
+                        <p className="text-xs text-gray-400 mt-0.5">
+                          {formatDuration(job.duration_seconds)}
+                        </p>
+                      )}
                       <p className={`text-xs mt-1 ${getStatusColor(job.status)}`}>
-                        {job.status}
+                        {getStatusIcon(job.status)} {job.status}
                       </p>
                     </div>
-                    {job.status === 'error' && (
+                    {job.status === 'discovered' && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={(e) => transcribeJob(job.id, e)}
+                        className="h-7 px-2 bg-blue-50 hover:bg-blue-100 text-blue-600 border-blue-200"
+                      >
+                        ▶ Transcribe
+                      </Button>
+                    )}
+                    {job.status === 'failed' && (
                       <Button
                         size="sm"
                         variant="ghost"
@@ -624,31 +741,87 @@ function HomeContent() {
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div className="space-y-2">
                   <h2 className="text-xl font-semibold text-gray-900">
-                    {selectedJob.title || 'Meeting Details'}
+                    {getJobTitle(selectedJob)}
                   </h2>
                   <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-gray-600">
                     <span className={getStatusColor(selectedJob.status)}>
-                      Status: {selectedJob.status}
+                      {getStatusIcon(selectedJob.status)} {selectedJob.status}
                     </span>
-                    <span>{formatDate(selectedJob.meeting_date, selectedJob.created_at)}</span>
+                    <span>{formatDate(selectedJob)}</span>
+                    {selectedJob.duration_seconds && (
+                      <span>{formatDuration(selectedJob.duration_seconds)}</span>
+                    )}
+                    {selectedJob.contact_number && (
+                      <span>{selectedJob.contact_number}</span>
+                    )}
                   </div>
-                  <p className="text-sm text-gray-500 break-all">
-                    {selectedJob.url}
-                  </p>
-                  {selectedJob.error && (
-                    <p className="text-sm text-red-600">
-                      Error: {selectedJob.error}
+
+                  {/* Processing progress indicator */}
+                  {['transcribing', 'transcribed', 'summarizing', 'syncing'].includes(selectedJob.status) && (
+                    <div className="mt-3 rounded-lg bg-blue-50 border border-blue-200 px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        <div className="animate-spin h-5 w-5 border-2 border-blue-600 border-t-transparent rounded-full"></div>
+                        <div className="text-sm text-blue-700">
+                          {selectedJob.status === 'transcribing' && 'Transcribing audio...'}
+                          {selectedJob.status === 'transcribed' && 'Preparing summarization...'}
+                          {selectedJob.status === 'summarizing' && 'Generating summary...'}
+                          {selectedJob.status === 'syncing' && 'Syncing to Notion...'}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  {selectedJob.gdrive_file_name && (
+                    <p className="text-sm text-gray-500 truncate max-w-2xl">
+                      📁 {selectedJob.gdrive_file_name}
                     </p>
+                  )}
+                  {selectedJob.url && (
+                    <p className="text-sm text-gray-500 break-all max-w-2xl">
+                      {selectedJob.url}
+                    </p>
+                  )}
+                  {selectedJob.error_message && (
+                    <p className="text-sm text-red-600">
+                      Error: {selectedJob.error_message}
+                    </p>
+                  )}
+                  {selectedJob.notion_url && (
+                    <a
+                      href={selectedJob.notion_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-sm text-purple-600 hover:text-purple-800 underline"
+                    >
+                      📝 View in Notion →
+                    </a>
                   )}
                 </div>
 
-                {selectedJob.status === 'completed' && transcript && (
+                {selectedJob.status === 'discovered' && (
                   <button
-                    onClick={() => resummarizeJob(selectedJob.id)}
+                    onClick={() => transcribeJob(selectedJob.id)}
                     className="inline-flex items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-blue-700"
                   >
-                    🔄 Resummarize
+                    ▶ Transcribe
                   </button>
+                )}
+                {selectedJob.status === 'completed' && (
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => syncToNotion(selectedJob.id)}
+                      className="inline-flex items-center justify-center rounded-md bg-purple-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-purple-700"
+                    >
+                      📝 Sync to Notion
+                    </button>
+                    {transcript && (
+                      <button
+                        onClick={() => resummarizeJob(selectedJob.id)}
+                        className="inline-flex items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-blue-700"
+                      >
+                        🔄 Resummarize
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
@@ -728,8 +901,8 @@ function HomeContent() {
         ) : (
           <div className="flex-1 flex items-center justify-center text-gray-500">
             <div className="text-center">
-              <p className="text-xl mb-2">Select a job to view details</p>
-              <p className="text-sm">Create a new job or select one from the list</p>
+              <p className="text-xl mb-2">Select a recording to view details</p>
+              <p className="text-sm">Choose a call from the list to see transcript and summary</p>
             </div>
           </div>
         )}

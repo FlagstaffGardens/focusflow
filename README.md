@@ -1,68 +1,324 @@
-# FocusFlow
+# FocusFlow V2
 
-FocusFlow ingests Plaud.ai share links or direct audio URLs, transcribes the audio (via AssemblyAI if configured), and generates meeting summaries with an OpenAI-compatible model. The app runs as a single Next.js 15 (App Router) project.
+**Automated Call Recording Processing System**
 
-## Getting Started
+FocusFlow automatically discovers, transcribes, and summarizes call recordings from Cube ACR, storing them in PostgreSQL and syncing to Notion for organization.
 
-1. Install Node.js 20 (see `.nvmrc`) and enable pnpm via corepack (`corepack enable`).
-2. `pnpm install`
-3. Copy `.env.example` to `.env` and fill in the required keys.
-4. `pnpm dev` to launch the dev server at http://localhost:3000.
+---
 
-## Environment Variables
+## 🎯 Overview
 
+**Flow:**
 ```
-PORT=3000                   # Port used by `pnpm dev` / `pnpm start`
-DATA_DIR=./data             # Directory for downloads, transcripts, summaries
+Cube ACR (Android) → Google Drive → FocusFlow Discovery → PostgreSQL Database
+                                           ↓
+                         User clicks "Transcribe" (on-demand)
+                                           ↓
+                    AssemblyAI → OpenAI → Notion → Complete
+```
 
-# Optional: simple HTTP Basic Auth protecting the UI + API
-BASIC_AUTH_USER=
-BASIC_AUTH_PASSWORD=
+**Key Features:**
+- ✅ **Auto-discovery** of Cube ACR recordings from Google Drive
+- ✅ **Manual on-demand transcription** (no wasted API costs)
+- ✅ **PostgreSQL storage** with full metadata
+- ✅ **Real-time UI updates** with animated progress indicators
+- ✅ **Automatic Notion sync** with beautiful formatting
+- ✅ **Zero local audio storage** (stream & discard)
 
-# Optional: transcription via AssemblyAI
-ASSEMBLYAI_API_KEY=
+---
 
-# Required for summarisation
-OPENAI_API_KEY=
+## 📊 Architecture
+
+### Tech Stack
+- **Frontend/API**: Next.js 15 (App Router)
+- **Database**: PostgreSQL (via Dokploy)
+- **Audio Storage**: Google Drive (source of truth)
+- **Transcription**: AssemblyAI
+- **Summarization**: OpenAI
+- **Organization**: Notion
+- **Deployment**: Dokploy
+
+### Data Flow
+
+1. **Discovery (Every 5 minutes - automatic)**
+   - Built-in cron job polls Google Drive for new `.m4a`/`.amr` files
+   - Parse Cube ACR filenames for metadata
+   - Fetch duration from companion `.json` files
+   - Create database records (status: `discovered`)
+
+2. **Manual Processing (On-demand)**
+   - User clicks "Transcribe" button
+   - Stream audio from Google Drive
+   - Transcribe with AssemblyAI
+   - Summarize with OpenAI
+   - Sync to Notion
+   - Status: `discovered → transcribing → summarizing → syncing → completed`
+
+### Database Schema
+
+```typescript
+jobs {
+  id: uuid
+  status: 'discovered' | 'transcribing' | 'summarizing' | 'syncing' | 'completed' | 'failed'
+  source: 'cube-acr' | 'plaud'
+
+  // Google Drive
+  gdrive_file_id: string (unique)
+  gdrive_file_name: string
+  gdrive_json_id: string
+
+  // Call Metadata (from filename)
+  contact_name: string
+  contact_number: string
+  call_direction: 'incoming' | 'outgoing'
+  call_timestamp: timestamp
+  call_type: 'phone' | 'whatsapp'
+  duration_seconds: integer  // from JSON file
+
+  // Processing Results
+  transcript: text
+  summary: text
+
+  // Notion Sync
+  notion_page_id: string (unique)
+  notion_url: text
+
+  // Timestamps
+  created_at, updated_at, discovered_at, completed_at
+}
+```
+
+---
+
+## 🚀 Setup
+
+### Prerequisites
+
+1. **Google Cloud Service Account**
+   - Enable Google Drive API
+   - Create service account
+   - Download JSON key
+   - Share Drive folder with service account email
+
+2. **PostgreSQL Database** (via Dokploy)
+   - Create database instance
+   - Get connection string
+
+3. **Notion Integration**
+   - Create integration at notion.so/my-integrations
+   - Create database with properties: Title, Date, Direction, Duration, Drive Link, Status
+   - Share database with integration
+   - Get database ID from URL
+
+4. **API Keys**
+   - AssemblyAI API key
+   - OpenAI API key
+
+### Environment Variables
+
+```env
+# App
+PORT=3000
+
+# Database
+DATABASE_URL=postgresql://postgres:password@host:5432/focusflow
+
+# Google Drive
+GOOGLE_SERVICE_ACCOUNT_KEY={"type":"service_account",...}
+GOOGLE_DRIVE_FOLDER_ID=your-folder-id
+ALLOWED_USERS=your-email@gmail.com
+
+# Processing
+ASSEMBLYAI_API_KEY=your-key
+OPENAI_API_KEY=your-key
 OPENAI_BASE_URL=https://api.openai.com
-OPENAI_MODEL=gpt-4
+OPENAI_MODEL=gpt-4o-mini
 
-# Rate limiting (per IP); defaults to 60 req / minute when unset
-# RATE_LIMIT_WINDOW_MS=60000
-# RATE_LIMIT_MAX_REQUESTS=60
+# Notion (optional)
+NOTION_API_KEY=secret_xxx
+NOTION_DATABASE_ID=xxx
 
-# Prompt template override
-PROMPT_PATH=prompts/meeting_summary.md
+# Security
+CRON_SECRET=your-secret
+BASIC_AUTH_USER=admin
+BASIC_AUTH_PASSWORD=password
 ```
 
-## Docker Compose
+### Installation
 
-You can run FocusFlow end-to-end with Docker:
+```bash
+# Install dependencies
+npm install
 
-1. Ensure your root `.env` has the required secrets (`OPENAI_API_KEY`, etc.). This same file is loaded by Docker Compose.
-2. (Optional) set `HOST_PORT` to control the host binding (defaults to 3000; set to `0` when a reverse proxy like Dokploy/Traefik should grab an available port automatically).
-3. Build and start the stack: `docker compose up --build`.
-4. The UI is available at http://localhost:${HOST_PORT:-3000}. Job data, transcripts, and summaries persist in the named volume `focusflow-data`.
+# Push database schema
+npm run db:push
 
-The compose file mounts `./prompts` read-only so you can tweak prompt templates without rebuilding, and it exposes `/app/data` through the named volume to preserve queue state across restarts.
+# Run discovery to populate database
+curl -X POST http://localhost:3000/api/gdrive/poll \
+  -H "Authorization: Bearer YOUR_CRON_SECRET"
 
-## Production Build
+# Start development server
+npm run dev
+```
 
-- `pnpm build` to create the optimized Next.js build.
-- `pnpm start` serves the built app (ensure `PORT` is set).
+---
 
-Persist the directory referenced by `DATA_DIR` (or the `focusflow-data` volume under Docker) so jobs, transcripts, and summaries survive restarts.
+## 📡 API Endpoints
 
-## Scripts
+### Discovery
+- `POST /api/gdrive/poll` - Manually trigger discovery (protected by CRON_SECRET)
+- `GET /api/gdrive/poll` - Get discovery statistics
+- **Note**: Discovery runs automatically every 5 minutes via built-in cron
 
-- `pnpm dev` – Next.js development server.
-- `pnpm build` – Production build.
-- `pnpm start` – Serve the production build.
-- `pnpm lint` – Run ESLint.
-- `pnpm type-check` – TypeScript project check.
+### Jobs
+- `GET /api/jobs` - List all jobs (sorted by call timestamp)
+- `POST /api/jobs/[id]/process` - Transcribe & process a specific job
+- `GET /api/jobs/[id]/transcript` - Get transcript for a job
 
-## Notes
+### Health
+- `GET /api/health` - API status and environment checks
 
-- The job queue keeps an in-memory view of jobs and flushes the JSON state asynchronously to `DATA_DIR`. It is still single-process; move to a proper database/worker setup before scaling horizontally.
-- HTTP Basic auth is enforced when `BASIC_AUTH_USER`/`BASIC_AUTH_PASSWORD` are set. Combine this with an upstream TLS-terminating proxy in production.
-- All `/api` routes are rate limited (defaults: 60 requests per minute per IP). Tune `RATE_LIMIT_*` env vars for your environment.
+---
+
+## 🎨 UI Features
+
+### Job List
+- 📞 Contact names with call type icons (phone/WhatsApp)
+- ↗/↙ Direction indicators
+- ⏱️ Duration display (e.g., "5m 23s")
+- 🎨 Color-coded status badges
+- 🔵 **"Transcribe" button** for discovered calls
+
+### Processing Indicators
+- ⏳ Animated spinner during processing
+- 📊 Real-time status updates:
+  - "Transcribing audio..."
+  - "Generating summary..."
+  - "Syncing to Notion..."
+- Auto-refresh every 5 seconds
+
+### Completed Jobs
+- 📝 Full transcript (collapsible)
+- 📋 AI-generated summary
+- 🔗 Link to Notion page
+
+---
+
+## 🔧 Cube ACR Filename Parsing
+
+**Phone Calls:**
+```
+2025-10-03 16-54-44 (phone) Contact Name (0486300265) ↙.m4a
+```
+- ↗ = Outgoing
+- ↙ = Incoming
+
+**WhatsApp:**
+```
+2025-10-03 17-09-31 (whatsapp) Contact Name.m4a
+```
+
+**JSON Metadata:**
+```json
+{
+  "duration": "141877",  // milliseconds
+  "callee": "0486300265",
+  "direction": "Incoming"
+}
+```
+
+---
+
+## 🚢 Deployment (Dokploy)
+
+1. **Create PostgreSQL Service**
+   - Name: `focusflow-db`
+   - Get connection string
+
+2. **Create Next.js App**
+   - Connect to GitHub repo
+   - Add all environment variables
+   - Deploy
+   - **Note**: Auto-discovery runs automatically every 5 minutes (built-in cron)
+
+---
+
+## 📝 Development
+
+### Database Commands
+```bash
+npm run db:push       # Push schema to database
+npm run db:studio     # Open Drizzle Studio
+```
+
+### File Structure
+```
+lib/
+├── db/              # PostgreSQL schema & client
+├── gdrive/          # Google Drive integration
+├── cube-acr/        # Filename parser
+├── notion/          # Notion sync service
+└── pipeline/        # AssemblyAI & OpenAI
+
+app/
+└── api/
+    ├── gdrive/      # Discovery endpoints
+    └── jobs/        # Job management & processing
+```
+
+---
+
+## 🔐 Security
+
+- **Service Account**: Minimal permissions (Drive viewer only)
+- **Allowlist**: Only process files from allowed users
+- **CRON_SECRET**: Protects polling endpoint
+- **BASIC_AUTH**: Protects UI and API routes
+- **No Audio Storage**: Stream & discard (zero local storage)
+- **HTTPS**: All external connections use TLS
+
+---
+
+## 📊 Monitoring
+
+- Check `/api/gdrive/poll` (GET) for statistics
+- Monitor database for job statuses
+- Review server logs for processing errors
+- Notion database shows all completed calls
+
+---
+
+## 🐛 Troubleshooting
+
+**No files discovered?**
+- Check service account has access to Drive folder
+- Verify ALLOWED_USERS includes file owner email
+- Check GOOGLE_DRIVE_FOLDER_ID is correct
+
+**Transcription fails?**
+- Verify ASSEMBLYAI_API_KEY is valid
+- Check audio file format (.m4a, .amr supported)
+- Review server logs for errors
+
+**Notion sync fails?**
+- Verify NOTION_API_KEY is valid
+- Check database is shared with integration
+- Ensure database has correct properties
+
+---
+
+## 📄 License
+
+MIT
+
+---
+
+## 🙏 Credits
+
+Built with:
+- [Next.js 15](https://nextjs.org)
+- [Drizzle ORM](https://orm.drizzle.team)
+- [AssemblyAI](https://www.assemblyai.com)
+- [OpenAI](https://openai.com)
+- [Notion API](https://developers.notion.com)
+- [Google Drive API](https://developers.google.com/drive)

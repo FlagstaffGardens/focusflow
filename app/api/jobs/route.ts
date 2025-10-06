@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getJobQueue } from '@/lib/queue'
 import { enforceRateLimit } from '@/lib/server/security'
 import { z } from 'zod'
+import { db } from '@/lib/db/client'
+import { jobs } from '@/lib/db/schema'
+import { desc } from 'drizzle-orm'
 
 export const runtime = 'nodejs'
 
@@ -10,16 +13,20 @@ const CreateJobSchema = z.object({
   meetingDate: z.string().optional(),
 })
 
-// GET /api/jobs - List all jobs
+// GET /api/jobs - List all jobs from database
 export async function GET(request: NextRequest) {
   const limited = enforceRateLimit(request)
   if (limited) return limited
 
   try {
-    const queue = getJobQueue()
-    const jobs = await queue.getStore().getJobs()
+    // Fetch all jobs from database, ordered by call timestamp (for Cube ACR) or created_at (for Plaud)
+    // This ensures calls are sorted by actual call time, not discovery time
+    const allJobs = await db
+      .select()
+      .from(jobs)
+      .orderBy(desc(jobs.call_timestamp), desc(jobs.created_at))
 
-    return NextResponse.json({ jobs })
+    return NextResponse.json({ jobs: allJobs })
   } catch (error) {
     console.error('Error fetching jobs:', error)
     return NextResponse.json(
