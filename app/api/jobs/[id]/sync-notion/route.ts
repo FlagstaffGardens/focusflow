@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db/client';
+import { getDb } from '@/lib/db/client';
 import { jobs } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { syncJobToNotion } from '@/lib/notion/sync';
@@ -19,6 +19,7 @@ export async function POST(
 
   try {
     // Get job from database
+    const db = getDb();
     const [job] = await db.select().from(jobs).where(eq(jobs.id, jobId));
 
     if (!job) {

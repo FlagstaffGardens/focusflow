@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db/client';
+import { getDb } from '@/lib/db/client';
 import { jobs } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { getAudioStream } from '@/lib/gdrive/client';
@@ -23,6 +23,7 @@ export async function POST(
 ) {
   const { id: jobId } = await params;
 
+  const db = getDb();
   try {
     // Get job from database
     const [job] = await db.select().from(jobs).where(eq(jobs.id, jobId));

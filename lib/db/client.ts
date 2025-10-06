@@ -1,18 +1,27 @@
-import { drizzle } from 'drizzle-orm/node-postgres';
+import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
 import * as schema from './schema';
 
-if (!process.env.DATABASE_URL) {
-  throw new Error('DATABASE_URL environment variable is required');
+let pool: Pool | null = null;
+let db: NodePgDatabase<typeof schema> | null = null;
+
+export function getDb(): NodePgDatabase<typeof schema> {
+  if (db) return db;
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) {
+    throw new Error('DATABASE_URL environment variable is required');
+  }
+  pool = new Pool({ connectionString });
+  db = drizzle(pool, { schema });
+  return db;
 }
 
-// Create PostgreSQL connection pool
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-});
-
-// Create Drizzle instance
-export const db = drizzle(pool, { schema });
-
-// Export pool for raw queries if needed
-export { pool };
+export function getPool(): Pool {
+  if (pool) return pool;
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) {
+    throw new Error('DATABASE_URL environment variable is required');
+  }
+  pool = new Pool({ connectionString });
+  return pool;
+}

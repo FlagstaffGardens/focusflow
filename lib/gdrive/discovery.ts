@@ -1,4 +1,4 @@
-import { db } from '../db/client';
+import { getDb } from '../db/client';
 import { jobs } from '../db/schema';
 import { eq } from 'drizzle-orm';
 import { listAudioFiles, listJsonFiles, isAllowedUser } from './client';
@@ -20,6 +20,7 @@ export interface DiscoveryResult {
  * Creates database records for files that haven't been processed yet
  */
 export async function discoverNewRecordings(): Promise<DiscoveryResult> {
+  const db = getDb();
   const result: DiscoveryResult = {
     discovered: 0,
     skipped: 0,
@@ -113,6 +114,7 @@ export async function discoverNewRecordings(): Promise<DiscoveryResult> {
  * Get discovery statistics
  */
 export async function getDiscoveryStats() {
+  const db = getDb();
   const [total, discovered, processing, completed, failed] = await Promise.all([
     db.select().from(jobs),
     db.select().from(jobs).where(eq(jobs.status, 'discovered')),

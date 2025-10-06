@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getJobQueue } from '@/lib/queue'
 import { enforceRateLimit } from '@/lib/server/security'
 import { z } from 'zod'
-import { db } from '@/lib/db/client'
+import { getDb } from '@/lib/db/client'
 import { jobs } from '@/lib/db/schema'
 import { desc } from 'drizzle-orm'
 
@@ -19,6 +19,7 @@ export async function GET(request: NextRequest) {
   if (limited) return limited
 
   try {
+    const db = getDb()
     // Fetch all jobs from database, ordered by call timestamp (for Cube ACR) or created_at (for Plaud)
     // This ensures calls are sorted by actual call time, not discovery time
     const allJobs = await db
