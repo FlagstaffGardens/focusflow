@@ -75,6 +75,14 @@ User views in Next.js UI or Notion
    - Example: `JohnDoe_20231015_143022_Incoming.m4a`
    - Parse into structured metadata
 
+### Timezone handling
+
+- Cube ACR filenames encode the call start in **Australia/Melbourne** local time. The arrow suffix (↗ / ↙) and phone/WhatsApp tag follow the timestamp string.
+- During discovery we parse that wall-clock time and convert it into an absolute `Date` using `localTimeInZoneToDate(..., 'Australia/Melbourne')`. The resulting `Date` represents the same instant in **UTC** and is what gets persisted in Postgres (`jobs.call_timestamp`).
+- Because the database column is `timestamp without time zone`, every downstream consumer (UI, Notion sync, CSV exports) must explicitly treat the stored value as UTC when rendering dates.
+- Daylight saving is handled automatically: `localTimeInZoneToDate` uses the IANA timezone database via `Intl.DateTimeFormat` so the correct offset is applied for the call date.
+- When you need to match the exact wall-clock string from Drive (e.g. to locate the source file), reformat the stored UTC instant in the `Australia/Melbourne` zone.
+
 3. **Job Queue Enhancement**
    - Add `source: 'cube-acr' | 'plaud'` field
    - Add call-specific fields: `contact_name`, `call_direction`, `call_duration_seconds`
