@@ -13,6 +13,7 @@ coverage/
 # Local data
 data/
 tmp-job-data/
+exports/
 
 # Environment files
 .env

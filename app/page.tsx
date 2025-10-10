@@ -385,24 +385,33 @@ function HomeContent() {
     const dateToUse = job.call_timestamp || job.meeting_date || job.created_at
     if (!dateToUse) return 'Unknown date'
 
-    // Many drivers serialize Postgres "timestamp without time zone" either as
-    // a naive string or as an ISO string with trailing Z. In our schema, this
-    // value represents Melbourne local time. Parse it as such to avoid a
-    // phantom +10/+11h shift.
-    const m = String(dateToUse).match(
-      /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,6})?)?(?:Z|[+-]\d{2}:?\d{2})?$/
-    )
-    const asMelbourne = m
-      ? localTimeInZoneToDate(
-          parseInt(m[1], 10),
-          parseInt(m[2], 10),
-          parseInt(m[3], 10),
-          parseInt(m[4], 10),
-          parseInt(m[5], 10),
-          m[6] ? parseInt(m[6], 10) : 0,
-          'Australia/Melbourne'
-        )
-      : new Date(dateToUse)
+    // Our DB stores call_timestamp as a "timestamp without time zone" that
+    // actually represents a UTC instant (derived from Melbourne local wall
+    // time at ingest). When serialized through the API it is usually ISO with
+    // a trailing Z. In some cases you may still see a naive string without a
+    // timezone. Treat naive values as UTC, then render in Australia/Melbourne.
+    const str = String(dateToUse)
+    const hasZone = /(?:Z|[+-]\d{2}:?\d{2})$/.test(str)
+    let asInstant: Date
+
+    if (hasZone) {
+      // Already an absolute instant (e.g. ...Z). Let JS parse it.
+      asInstant = new Date(str)
+    } else {
+      // Parse the numeric parts and interpret them as UTC wall time.
+      const m = str.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,6})?)?$/)
+      asInstant = m
+        ? localTimeInZoneToDate(
+            parseInt(m[1], 10),
+            parseInt(m[2], 10),
+            parseInt(m[3], 10),
+            parseInt(m[4], 10),
+            parseInt(m[5], 10),
+            m[6] ? parseInt(m[6], 10) : 0,
+            'UTC'
+          )
+        : new Date(str)
+    }
 
     return new Intl.DateTimeFormat('en-AU', {
       timeZone: 'Australia/Melbourne',
@@ -412,7 +421,7 @@ function HomeContent() {
       minute: '2-digit',
       year: 'numeric',
       hour12: true,
-    }).format(asMelbourne)
+    }).format(asInstant)
   }
 
   if (isMobile) {

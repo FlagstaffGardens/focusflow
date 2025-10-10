@@ -3,6 +3,7 @@ import { Client } from '@notionhq/client';
 import type { Job } from '../db/schema';
 import { getDriveFileUrl } from '../gdrive/client';
 import { markdownToNotionBlocks } from './markdown-parser';
+import { localTimeInZoneToDate } from '@/lib/utils/timezone';
 
 function getNotionClient() {
   const apiKey = process.env.NOTION_API_KEY;
@@ -77,8 +78,32 @@ export async function syncJobToNotion(job: Job): Promise<{ pageId: string; url: 
 
     // Add date
     if (job.call_timestamp) {
+      // call_timestamp is stored as a Postgres TIMESTAMP WITHOUT TIME ZONE
+      // that semantically represents a UTC instant. When serialized it may
+      // arrive as ISO with Z (ideal) or as a naive string. Normalize to an
+      // absolute instant (UTC) before sending to Notion.
+      const ts = String(job.call_timestamp);
+      const hasZone = /(Z|[+-]\d{2}:?\d{2})$/.test(ts);
+      let asDate: Date;
+      if (hasZone) {
+        asDate = new Date(ts);
+      } else {
+        const m = ts.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,6})?)?$/);
+        asDate = m
+          ? localTimeInZoneToDate(
+              parseInt(m[1], 10),
+              parseInt(m[2], 10),
+              parseInt(m[3], 10),
+              parseInt(m[4], 10),
+              parseInt(m[5], 10),
+              m[6] ? parseInt(m[6], 10) : 0,
+              'UTC',
+            )
+          : new Date(ts as any);
+      }
+
       properties.Date = {
-        date: { start: new Date(job.call_timestamp).toISOString() },
+        date: { start: asDate.toISOString() },
       };
     }
 
