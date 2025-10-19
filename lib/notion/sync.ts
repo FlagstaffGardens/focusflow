@@ -65,9 +65,11 @@ export async function syncJobToNotion(job: Job): Promise<{ pageId: string; url: 
     }
     const { notion, databaseId } = ctx;
     // Prepare title
+    const icon = job.call_type === 'whatsapp' ? '💬' : job.call_type === 'mic' ? '🎙️' : '📞';
+    const arrow = job.call_type === 'mic' ? '' : (job.call_direction === 'incoming' ? ' ↙' : ' ↗');
     const title = job.contact_name
-      ? `${job.call_type === 'whatsapp' ? '💬' : '📞'} ${job.contact_name} ${job.call_direction === 'incoming' ? '↙' : '↗'}`
-      : 'Call Recording';
+      ? `${icon} ${job.contact_name}${arrow}`.trim()
+      : (job.call_type === 'mic' ? 'In-person Meeting' : 'Call Recording');
 
     // Prepare properties
     const properties: any = {

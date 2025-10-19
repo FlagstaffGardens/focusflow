@@ -11,7 +11,7 @@ export interface OpenAIConfig {
 
 /**
  * Summarize transcript using OpenAI-compatible API
- * Uses /openai/v1/responses endpoint with streaming
+ * Uses OpenAI-compatible Chat Completions API with streaming
  * Following the contract in doc/ai_endpoints.md
  */
 export async function* summarizeWithGPT(
@@ -20,7 +20,12 @@ export async function* summarizeWithGPT(
   config: OpenAIConfig,
   log: LogFunction
 ): AsyncGenerator<string, string, unknown> {
-  const { apiKey, baseUrl = 'https://api.openai.com', model = 'gpt-4' } = config
+  // Allow MODELSCOPE_* env overrides via config defaults
+  const {
+    apiKey,
+    baseUrl = process.env.OPENAI_BASE_URL || process.env.MODELSCOPE_BASE_URL || 'https://api.openai.com',
+    model = process.env.OPENAI_MODEL || process.env.MODELSCOPE_MODEL_ID || 'gpt-4'
+  } = config
 
   if (!apiKey) {
     log('OPENAI_API_KEY not set → skipping summarization')
@@ -35,7 +40,8 @@ export async function* summarizeWithGPT(
 
   log('Calling GPT for summary...')
 
-  const response = await fetch(`${baseUrl}/v1/responses`, {
+  const url = `${baseUrl.replace(/\/$/, '')}/chat/completions`
+  const response = await fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -43,12 +49,9 @@ export async function* summarizeWithGPT(
     },
     body: JSON.stringify({
       model,
-      input: [
-        {
-          type: 'message',
-          role: 'user',
-          content: `You are an expert meeting analyst and technical program manager. Produce clear, executive-ready meeting summaries.\n\n${renderedPrompt}`,
-        },
+      messages: [
+        { role: 'system', content: 'You are an expert meeting analyst and technical program manager. Produce clear, executive-ready meeting summaries.' },
+        { role: 'user', content: renderedPrompt },
       ],
       temperature: 0.2,
       stream: true,
@@ -61,7 +64,7 @@ export async function* summarizeWithGPT(
     throw new Error(`GPT API failed: ${response.status}`)
   }
 
-  // Process streaming response (Codex-style format)
+  // Process streaming response (OpenAI chat.completions SSE)
   let fullText = ''
   const decoder = new TextDecoder()
   const reader = response.body?.getReader()
@@ -81,40 +84,20 @@ export async function* summarizeWithGPT(
     buffer = lines.pop() || ''
 
     for (const line of lines) {
-      if (line.startsWith('data: ')) {
-        const data = line.slice(6).trim()
-        if (!data || data === '[DONE]') {
-          continue
+      if (!line.startsWith('data: ')) continue
+      const data = line.slice(6).trim()
+      if (!data || data === '[DONE]') continue
+      try {
+        const chunk = JSON.parse(data)
+        const choice = chunk.choices && chunk.choices[0]
+        const delta = choice && choice.delta
+        const text = delta && delta.content
+        if (typeof text === 'string' && text.length > 0) {
+          fullText += text
+          yield text
         }
-
-        try {
-          const event = JSON.parse(data)
-
-          // Look for Codex-style output text events
-          if (event.type === 'response.output_text.delta') {
-            const text = event.text
-            if (text) {
-              fullText += text
-              yield text
-            }
-          } else if (event.type === 'response.output_text.done') {
-            // Final text output
-            const text = event.text
-            if (text && !fullText.includes(text)) {
-              fullText = text
-              yield text
-            }
-          } else if (event.type === 'response.content_part.delta') {
-            // Alternative delta format
-            const text = event.part?.text
-            if (text) {
-              fullText += text
-              yield text
-            }
-          }
-        } catch {
-          // Skip invalid JSON chunks
-        }
+      } catch {
+        // ignore
       }
     }
   }
@@ -156,7 +139,11 @@ export async function generateTitle(
   config: OpenAIConfig,
   log: LogFunction
 ): Promise<string> {
-  const { apiKey, baseUrl = 'https://api.openai.com', model = 'gpt-4' } = config
+  const {
+    apiKey,
+    baseUrl = process.env.OPENAI_BASE_URL || process.env.MODELSCOPE_BASE_URL || 'https://api.openai.com',
+    model = process.env.OPENAI_MODEL || process.env.MODELSCOPE_MODEL_ID || 'gpt-4'
+  } = config
 
   if (!apiKey) {
     return extractTitleFromSummary(summary)
@@ -191,7 +178,8 @@ export async function generateTitle(
       summary.slice(0, 2000)
     )
 
-    const response = await fetch(`${baseUrl}/v1/responses`, {
+    const url = `${baseUrl.replace(/\/$/, '')}/chat/completions`
+    const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -199,15 +187,12 @@ export async function generateTitle(
       },
       body: JSON.stringify({
         model,
-        input: [
-          {
-            type: 'message',
-            role: 'user',
-            content: renderedPrompt,
-          },
+        messages: [
+          { role: 'system', content: 'You generate concise, descriptive meeting titles.' },
+          { role: 'user', content: renderedPrompt },
         ],
         temperature: 0.2,
-        stream: true,
+        stream: false,
       }),
     })
 
@@ -217,46 +202,8 @@ export async function generateTitle(
       throw new Error(`Title API failed: ${response.status}`)
     }
 
-    // Process streaming response
-    let fullTitle = ''
-    const decoder = new TextDecoder()
-    const reader = response.body?.getReader()
-
-    if (!reader) {
-      throw new Error('No response body')
-    }
-
-    let buffer = ''
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-
-      buffer += decoder.decode(value, { stream: true })
-      const lines = buffer.split('\n')
-      buffer = lines.pop() || ''
-
-      for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          const data = line.slice(6).trim()
-          if (!data || data === '[DONE]') continue
-
-          try {
-            const event = JSON.parse(data)
-            if (event.type === 'response.output_text.delta') {
-              fullTitle += event.text || ''
-            } else if (event.type === 'response.output_text.done') {
-              fullTitle = event.text || fullTitle
-            } else if (event.type === 'response.content_part.delta') {
-              fullTitle += event.part?.text || ''
-            }
-          } catch {
-            // Skip invalid JSON
-          }
-        }
-      }
-    }
-
-    const title = fullTitle.trim().slice(0, 50)
+    const json: any = await response.json()
+    const title = (json.choices?.[0]?.message?.content || '').trim().slice(0, 50)
     if (title) {
       log(`Generated title: ${title}`)
       return title

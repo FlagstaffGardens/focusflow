@@ -23,7 +23,7 @@ export const jobs = pgTable('jobs', {
   contact_number: varchar('contact_number'),
   call_direction: varchar('call_direction', { enum: ['incoming', 'outgoing'] }),
   call_timestamp: timestamp('call_timestamp'),
-  call_type: varchar('call_type', { enum: ['phone', 'whatsapp'] }),
+  call_type: varchar('call_type', { enum: ['phone', 'whatsapp', 'mic'] }),
 
   // Duration (from JSON file, in seconds)
   duration_seconds: integer('duration_seconds'),

@@ -1,9 +1,9 @@
 export interface CubeACRMetadata {
   contactName: string;
   contactNumber?: string;
-  callDirection: 'incoming' | 'outgoing';
+  callDirection?: 'incoming' | 'outgoing';
   callTimestamp: Date;
-  callType: 'phone' | 'whatsapp';
+  callType: 'phone' | 'whatsapp' | 'mic';
   fileName: string;
 }
 

@@ -29,22 +29,23 @@ export function parseCubeACRFilename(filename: string): ParsedFilename {
     const callTimestamp = localTimeInZoneToDate(year, month, day, hh, mm, ss, 'Australia/Melbourne');
 
     // Extract call type (phone or whatsapp)
-    const typeMatch = nameWithoutExt.match(/\((phone|whatsapp)\)/);
+    const typeMatch = nameWithoutExt.match(/\((phone|whatsapp|mic)\)/);
     if (!typeMatch) {
       return { metadata: null, error: 'Could not extract call type from filename' };
     }
-    const callType = typeMatch[1] as 'phone' | 'whatsapp';
+    const callType = typeMatch[1] as 'phone' | 'whatsapp' | 'mic';
 
     // Extract direction arrow (↗ = outgoing, ↙ = incoming)
-    // Default to incoming for WhatsApp (no arrow)
+    // For WhatsApp we default to incoming (no arrow). For mic we leave undefined.
     const hasOutgoingArrow = nameWithoutExt.includes('↗');
     const hasIncomingArrow = nameWithoutExt.includes('↙');
-    let callDirection: 'incoming' | 'outgoing' = 'incoming'; // default for WhatsApp
-
-    if (hasOutgoingArrow) {
-      callDirection = 'outgoing';
-    } else if (hasIncomingArrow) {
-      callDirection = 'incoming';
+    let callDirection: 'incoming' | 'outgoing' | undefined = undefined;
+    if (callType === 'mic') {
+      callDirection = undefined;
+    } else {
+      callDirection = 'incoming'; // default for WhatsApp
+      if (hasOutgoingArrow) callDirection = 'outgoing';
+      else if (hasIncomingArrow) callDirection = 'incoming';
     }
 
     // Extract contact name and phone number
@@ -69,9 +70,12 @@ export function parseCubeACRFilename(filename: string): ParsedFilename {
         // Fallback: no phone number, just contact name
         contactName = afterType.replace(/[↗↙]/g, '').trim();
       }
-    } else {
+    } else if (callType === 'whatsapp') {
       // WhatsApp: "Contact Name" (no phone number, no arrow)
       contactName = afterType.trim();
+    } else {
+      // mic: treat remainder as a meeting title if present; otherwise generic label
+      contactName = afterType.trim() || 'In-person meeting';
     }
 
     // Clean up contact name (remove any trailing arrows)
@@ -104,7 +108,7 @@ export function parseCubeACRFilename(filename: string): ParsedFilename {
  */
 export function isCubeACRFile(filename: string): boolean {
   const audioExtensions = /\.(m4a|amr|mp3|wav)$/i;
-  const cubePattern = /^\d{4}-\d{2}-\d{2} \d{2}-\d{2}-\d{2} \((phone|whatsapp)\)/;
+  const cubePattern = /^\d{4}-\d{2}-\d{2} \d{2}-\d{2}-\d{2} \((phone|whatsapp|mic)\)/;
 
   return audioExtensions.test(filename) && cubePattern.test(filename);
 }

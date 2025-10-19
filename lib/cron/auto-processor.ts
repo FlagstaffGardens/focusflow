@@ -2,7 +2,7 @@ import cron from 'node-cron'
 import type { ScheduledTask } from 'node-cron'
 import { getDb } from '@/lib/db/client'
 import { jobs } from '@/lib/db/schema'
-import { and, desc, eq, inArray, gte, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, gte, sql, or } from 'drizzle-orm'
 import { processJob } from '@/lib/jobs/processor'
 
 let autoCron: ScheduledTask | null = null
@@ -40,7 +40,8 @@ async function claimEligibleJobs(limit: number, minDuration: number, directions:
     .where(
       and(
         eq(jobs.status, 'discovered'),
-        inArray(jobs.call_direction, directions),
+        // Process phone/whatsapp by direction; allow mic regardless of direction
+        or(eq(jobs.call_type, 'mic'), inArray(jobs.call_direction, directions)),
         // allow missing duration; if present, require >= minDuration
         sql`(${jobs.duration_seconds} IS NULL OR ${jobs.duration_seconds} >= ${minDuration})`,
         cutoff ? gte(jobs.discovered_at, cutoff) : sql`TRUE`,

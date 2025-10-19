@@ -20,7 +20,7 @@ interface Job {
   contact_number?: string | null
   call_direction?: 'incoming' | 'outgoing' | null
   call_timestamp?: string | null
-  call_type?: 'phone' | 'whatsapp' | null
+  call_type?: 'phone' | 'whatsapp' | 'mic' | null
   duration_seconds?: number | null
   gdrive_file_id?: string | null
   gdrive_file_name?: string | null
@@ -367,11 +367,11 @@ function HomeContent() {
 
   const getJobTitle = (job: Job) => {
     if (job.contact_name) {
-      const typeIcon = job.call_type === 'whatsapp' ? '💬' : '📞'
-      const directionIcon = job.call_direction === 'incoming' ? '↙' : '↗'
-      return `${typeIcon} ${job.contact_name} ${directionIcon}`
+      const typeIcon = job.call_type === 'whatsapp' ? '💬' : job.call_type === 'mic' ? '🎙️' : '📞'
+      const directionIcon = job.call_type === 'mic' ? '' : (job.call_direction === 'incoming' ? ' ↙' : ' ↗')
+      return `${typeIcon} ${job.contact_name}${directionIcon}`.trim()
     }
-    return job.title || 'Untitled Meeting'
+    return job.title || (job.call_type === 'mic' ? 'In-person meeting' : 'Untitled Meeting')
   }
 
   const formatDuration = (seconds?: number | null) => {

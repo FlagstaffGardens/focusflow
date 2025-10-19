@@ -94,9 +94,9 @@ export async function processJob(jobId: string): Promise<void> {
     transcript,
     melbourneDate,
     {
-      apiKey: process.env.OPENAI_API_KEY || '',
-      baseUrl: process.env.OPENAI_BASE_URL,
-      model: process.env.OPENAI_MODEL,
+      apiKey: process.env.MODELSCOPE_API_KEY || process.env.OPENAI_API_KEY || '',
+      baseUrl: process.env.MODELSCOPE_BASE_URL || process.env.OPENAI_BASE_URL,
+      model: process.env.MODELSCOPE_MODEL_ID || process.env.OPENAI_MODEL,
     },
     (msg) => console.log(`[${jobId}] ${msg}`),
   )

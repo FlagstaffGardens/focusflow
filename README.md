@@ -131,7 +131,12 @@ ALLOWED_USERS=your-email@gmail.com
 
 # Processing
 ASSEMBLYAI_API_KEY=your-key
-OPENAI_API_KEY=your-key
+# Preferred (ModelScope / OpenAI-compatible)
+MODELSCOPE_API_KEY=your-key
+MODELSCOPE_BASE_URL=https://api.siliconflow.cn/v1
+MODELSCOPE_MODEL_ID=zai-org/GLM-4.6
+# Optional fallback (OpenAI-style names)
+OPENAI_API_KEY=
 OPENAI_BASE_URL=https://api.openai.com
 OPENAI_MODEL=gpt-4o-mini
 
