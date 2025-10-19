@@ -202,7 +202,10 @@ export async function generateTitle(
       throw new Error(`Title API failed: ${response.status}`)
     }
 
-    const json: any = await response.json()
+    type ChatCompletionResponse = {
+      choices?: Array<{ message?: { content?: string } }>
+    }
+    const json = (await response.json()) as ChatCompletionResponse
     const title = (json.choices?.[0]?.message?.content || '').trim().slice(0, 50)
     if (title) {
       log(`Generated title: ${title}`)
